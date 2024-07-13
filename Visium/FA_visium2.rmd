@@ -1,0 +1,1174 @@
+
+
+
+```{r}
+library(rlang)
+library(Seurat)
+library(ggplot2)
+library(harmony)
+library(RColorBrewer)
+library(tidyverse)
+library(patchwork)
+library(reshape2)
+library(reshape)
+
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(ggplot2)
+library(ggvenn)
+library(ComplexUpset)
+library(ComplexHeatmap)
+```
+
+
+```{r}
+load("temp4.Rdata")
+```
+
+
+
+```{r}
+Idents(merge.obj) <- merge.obj$anatomy
+merge.obj <- FindSubCluster(merge.obj, "0",subcluster.name = "cortex.cluster.0.15","Spatial_snn",
+  resolution = 0.15)
+```
+
+
+```{r}
+
+color8 <- SpatialColors(n = 9)
+
+"#5E4FA2" "#48A0B2" "#A1D9A4" "#EDF7A3" "#FEE899" "#FBA45C" "#E25249" "#9E0142"
+
+"#5E4FA2" "#3E96B7" "#88CFA4" "#D7EF9B" "#FFFFBF" "#FDD380" "#F88D52" "#DC494C" "#9E0142"
+
+"#5E4FA2" "#4075B4" "#439BB5" "#66C2A5" "#93D3A4" "#BEE4A0" "#E6F598" "#F6FBB2" "#FEF4AD" "#FEE08B" "#FDBE6F" "#FA9857" "#F46D43" "#DF4D4B" "#C2294A" "#9E0142"
+
+"red"
+"blue"
+
+ctx.clusters <- unique(merge.obj$cortex.cluster.0.15)
+
+# [1] "2"           "0_1"         "1"           "0_3"         
+# "0_2"         "0_0"         "4"           "hippocampus" "5"  
+# Define a color for each cluster
+ctx.cluster_colors <- c("grey",color8[1],"grey", color8[2],
+                              color8[3],color8[4],"grey","grey","grey") # replace with the colors of your choice
+
+
+ctx.cluster_colors <- c("grey","#65A6CE","grey", "#65C2A4",
+                              "#FDAE61","#A64051","grey","grey","grey") # replace with the colors of your choice
+                         
+# Create a named vector for the color palette
+names(ctx.cluster_colors) <- ctx.clusters
+
+
+SpatialDimPlot(merge.obj, images = rep.images[1], group.by = "cortex.cluster.0.15", cols = ctx.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[1],"cortex.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+SpatialDimPlot(merge.obj, images = rep.images[2], group.by = "cortex.cluster.0.15", cols = ctx.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[2],"cortex.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+SpatialDimPlot(merge.obj, images = rep.images[3], group.by = "cortex.cluster.0.15", cols = ctx.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[3],"cortex.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+SpatialDimPlot(merge.obj, images = rep.images[4], group.by = "cortex.cluster.0.15", cols = ctx.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[4],"cortex.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+hip.clusters <- unique(merge.obj$hippocampus.cluster.0.1)
+
+# [1] "2"             "0"             "1"             "4"             
+#"hippocampus_2" "hippocampus_1" "hippocampus_0" "5"             "hippocampus_3"
+
+# Define a color for each cluster
+hip.cluster_colors <- c("grey","grey","grey","grey",
+                               color8[6],color8[7],color8[8],"grey",
+                              color8[9])
+
+
+hip.cluster_colors <- c("grey","grey","grey","grey",
+                               "#93C5DF","#6FAE47","#CA9341","grey",
+                              "#F36D44")
+# Create a named vector for the color palette
+names(hip.cluster_colors) <- hip.clusters
+
+SpatialDimPlot(merge.obj, images = rep.images[1], group.by = "hippocampus.cluster.0.1", cols = hip.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[1],"hippocampus.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+SpatialDimPlot(merge.obj, images = rep.images[2], group.by = "hippocampus.cluster.0.1", cols = hip.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[2],"hippocampus.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+SpatialDimPlot(merge.obj, images = rep.images[3], group.by = "hippocampus.cluster.0.1", cols = hip.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[3],"hippocampus.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+SpatialDimPlot(merge.obj, images = rep.images[4], group.by = "hippocampus.cluster.0.1", cols = hip.cluster_colors)
+ggsave(paste("./High_resolution/SpatialDimplot.",rep.images[4],"hippocampus.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+```
+
+
+```{r}
+hip.obj <- subset(merge.obj, subset = hippocampus.cluster.0.1 %in% c("hippocampus_0","hippocampus_1", "hippocampus_2", "hippocampus_3"))
+
+
+
+ctx.obj <- subset(merge.obj, subset = cortex.cluster.0.15 %in% ctx.clusters[grepl("0_", ctx.clusters)])
+```
+
+```{r}
+DimPlot(hip.obj,group.by = "hippocampus.cluster.0.1",cols = hip.cluster_colors)
+ggsave(paste("./High_resolution/Umap.hip.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+DimPlot(ctx.obj,group.by = "cortex.cluster.0.15",cols = ctx.cluster_colors)
+ggsave(paste("./High_resolution/Umap.ctx.sub.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+```
+
+
+```{r}
+Idents(hip.obj) <- hip.obj$hippocampus.cluster.0.1
+hip.sub.allmarker <- FindAllMarkers(hip.obj, group.by = "hippocampus.cluster.0.1")
+write.csv(hip.sub.allmarker, file = "./marker/hip.sub.allmarker.csv")
+
+Idents(ctx.obj) <- ctx.obj$cortex.cluster.0.15
+ctx.sub.allmarker <- FindAllMarkers(ctx.obj, group.by = "cortex.cluster.0.15")
+write.csv(ctx.sub.allmarker, file = "./marker/ctx.sub.allmarker.csv")
+```
+
+```{r}
+hip.sub.allmarker %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10.hip
+write.csv(top10.hip, file = "./marker/hip.sub.top10.allmarker.csv")
+
+ctx.sub.allmarker %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10.ctx
+write.csv(top10.ctx, file = "./marker/ctx.sub.top10.allmarker.csv")
+```
+
+
+```{r}
+
+top10.hip <- top10.hip[c(21:30,11:20,1:10,31:40),]
+DoHeatmap(hip.obj, features = top10.hip$gene,group.by = "hippocampus.cluster.0.1")+
+  scale_fill_gradientn(colors = c("blue", "white", "red"))# + theme(axis.text.y = element_blank())
+ggsave(paste("./High_resolution/Heatmap.hip.sub.top10.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+
+top10.ctx <- top10.ctx[c(31:40,1:10,21:30,11:20),]
+DoHeatmap(ctx.obj, features = top10.ctx$gene, group.by = "cortex.cluster.0.15")+
+  scale_fill_gradientn(colors = c("blue", "white", "red"))# + theme(axis.text.y = element_blank())
+ggsave(paste("./High_resolution/Heatmap.ctx.sub.top10.tiff", sep = ""), device='tiff', dpi=500, height = 6, width = 8, unit = 'in')
+```
+
+```{r}
+Idents(merge.obj) <- "cortex.cluster.0.15"
+
+for(i in c("0_0","0_1","0_2","0_3")){
+  assign(paste("cluster",i,"HF_vs_MF.DEG",sep = "."),
+         FindMarkers(merge.obj, ident.1 = "hf",ident.2 = "mf", group.by = 'FA', subset.ident = i,
+                     logfc.threshold = 0, pseudocount.use = 0))
+  # write.csv(get(paste("cluster",i,"HF_vs_MF.DEG",sep = ".")), file = paste("cluster.0.15",i,"HF_vs_MF.DEG.csv",sep = "."))
+  }
+```
+
+```{r}
+save.image("temp5.Rdata")
+```
+
+
+
+
+```{r hip transromed volcano}
+modify_cluster <- function(cluster, label) {
+  cluster$gene <- rownames(cluster)
+  cluster$condition <- ifelse(cluster$avg_log2FC > 0, paste0("Up"), paste0("Down"))
+  cluster$cluster <- label
+  cluster <- as.data.frame(cluster)
+  cluster <- cluster %>% arrange(desc(avg_log2FC))
+  
+  # Define significant genes
+  cluster$sig <- ""
+  cluster$sig[abs(cluster$avg_log2FC) > log2(1.2) & cluster$p_val_adj < 0.05] <- paste0(label, "_sig")
+  cluster$sig[cluster$sig == ""] <- "not_sig"
+  cluster$sig <- factor(cluster$sig, levels = c("not_sig", paste0(label, "_sig")))
+
+  # Arrange and limit log2FC values
+  cluster <- cluster %>% arrange(cluster, sig)
+  cluster$avg_log2FC[cluster$avg_log2FC > 3] <- 3
+  cluster$avg_log2FC[cluster$avg_log2FC < -3] <- -3
+
+  # Compute negative log10 of adjusted p-values
+  cluster$padj_log10_neg <- -log10(cluster$p_val_adj)
+  cluster$padj_log10_neg <- ifelse(cluster$avg_log2FC > 0,
+                                    cluster$padj_log10_neg,
+                                    -cluster$padj_log10_neg)
+  return(cluster)
+}
+
+# hip0
+marker.cluster.hippocampus_0.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_0.HF_vs_MF.DEG, "hip0")
+
+# hip1
+marker.cluster.hippocampus_1.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_1.HF_vs_MF.DEG, "hip1")
+
+# hip2
+marker.cluster.hippocampus_2.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_2.HF_vs_MF.DEG, "hip2")
+
+# hip3
+marker.cluster.hippocampus_3.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_3.HF_vs_MF.DEG, "hip3")
+
+
+hippocampus.condition.DEG <- rbind(marker.cluster.hippocampus_0.HF_vs_MF.DEG, marker.cluster.hippocampus_1.HF_vs_MF.DEG,
+                                   marker.cluster.hippocampus_2.HF_vs_MF.DEG,marker.cluster.hippocampus_3.HF_vs_MF.DEG)
+
+hippocampus.condition.DEG <- hippocampus.condition.DEG%>%arrange(cluster,sig)
+
+hippocampus.condition.DEG$padj_log10_neg <-  -log10(hippocampus.condition.DEG$p_val_adj)
+hippocampus.condition.DEG$padj_log10_neg <- ifelse(hippocampus.condition.DEG$avg_log2FC > 0,
+                                        hippocampus.condition.DEG$padj_log10_neg,
+                                        -hippocampus.condition.DEG$padj_log10_neg)
+
+```
+
+
+
+
+
+```{r}
+hippocampus.condition.DEG$condition[hippocampus.condition.DEG$sig == "not_sig"] <- "NS"
+
+color_ct <- c("Up"="red", "Down"="blue", "not_sig"="#dee1e6")
+
+hip.plot.list=list()
+for (ci in c("hip0","hip1","hip2","hip3")) {
+  print(ci)
+  tmpdf=hippocampus.condition.DEG %>% filter(cluster == ci)
+  minabs=abs(min(tmpdf$padj_log10_neg))
+  maxabs=max(tmpdf$padj_log10_neg)
+  thre=0
+  if(minabs < maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > minabs] = minabs
+    thre=minabs
+  }
+  if(minabs > maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-maxabs)] = -maxabs
+    thre=maxabs
+  }
+  if(minabs == maxabs & maxabs == Inf) {
+    thre = min(
+      abs(
+        range(
+          tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < Inf & tmpdf$padj_log10_neg > -Inf]
+        )
+      )
+    )
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-thre)] = -thre
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > thre] = thre
+  }
+  
+  plotdata = tmpdf
+  tmpdf=tmpdf%>%filter(sig != "not") #这里我取了logFC最极端的几个gene来标注文本，实际处理中不一定这样做
+  tmpdf=tmpdf%>%arrange(desc(avg_log2FC))
+  tmpdf.a=head(tmpdf%>%filter(avg_log2FC > 0),5)
+  tmpdf.a$d=thre*2*0.05+(-thre)-tmpdf.a$padj_log10_neg
+  tmpdf.b=tail(tmpdf%>%filter(avg_log2FC < 0),5)
+  tmpdf.b$d=thre*2*0.95-thre  - tmpdf.b$padj_log10_neg
+  textdata.down = tmpdf.b
+  textdata.up   = tmpdf.a
+  
+  ###画图
+  tmpplot=plotdata%>%ggplot(aes(x=padj_log10_neg,y=avg_log2FC))+
+    geom_point(aes(color=condition),size=3)+
+    geom_hline(yintercept = c(-log2(1.2),log2(1.2)),linetype="dashed")+
+    geom_hline(yintercept = c(0),linetype="solid")+
+    # geom_text_repel(data = textdata.down,
+    #                 mapping = aes(label=gene),
+    #                 nudge_x=textdata.down$d,
+    #                 direction = "y", hjust = 1,segment.size = 0.2)+
+    # geom_text_repel(data = textdata.up,
+    #                 mapping = aes(label=gene),
+    #                 nudge_x=textdata.up$d,
+    #                 direction = "y", hjust = 0,segment.size = 0.2)+
+    labs(title = ci)+
+    scale_color_manual(values =  c("Up" = "red", "Down" = "blue", "NS" = "grey"))+
+    scale_y_continuous("log2(Fold Change)",expand = c(0.02,0),limits = c(-3,3))+
+    theme_bw()+
+    theme(
+      panel.grid = element_blank(),
+      legend.position = "none",
+      
+      axis.ticks.x.bottom = element_blank(),
+      axis.text.x.bottom = element_blank(),
+      axis.title.x.bottom = element_blank(),
+      axis.text.y.left = element_text(size = 14,color = "black"),
+      axis.title.y.left = element_text(size = 16),
+      
+      plot.title = element_text(size = 16,hjust = 0.5)
+    )
+  
+  index=which(ci == c("hip0","hip1","hip2","hip3"))
+  if (index!=1) {
+    tmpplot=tmpplot+theme(
+      axis.title.y.left = element_blank(),
+      axis.ticks.y.left = element_blank(),
+      axis.text.y.left = element_blank()
+    )
+  }
+  # if (index == length(sort(unique(as.character(marker.cluster.0.HF_vs_MF.DEG$cluster))))) {
+  #   segment.df=data.frame(x=c(0 - thre / 5,0 + thre / 5),
+  #                         xend=c(-thre,thre),
+  #                         y=c(-3,-3),
+  #                         yend=c(-3,-3))
+  #   tmpplot=tmpplot+geom_segment(data = segment.df,
+  #                                mapping = aes(x=x,xend=xend,y=y,yend=yend),
+  #                                arrow = arrow(length=unit(0.0, "cm"))
+  #                                )
+  #   
+  # }
+  hip.plot.list[[get("index")]]=tmpplot
+} 
+
+wrap_plots(hip.plot.list,ncol = 4)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+```
+
+
+```{r ctx transformed volcano}
+marker.cluster.ctx_0.HF_vs_MF.DEG <- modify_cluster(cluster.0_0.HF_vs_MF.DEG, "ctx0")
+
+# ctx1
+marker.cluster.ctx_1.HF_vs_MF.DEG <- modify_cluster(cluster.0_1.HF_vs_MF.DEG, "ctx1")
+
+# ctx2
+marker.cluster.ctx_2.HF_vs_MF.DEG <- modify_cluster(cluster.0_2.HF_vs_MF.DEG, "ctx2")
+
+# ctx3
+marker.cluster.ctx_3.HF_vs_MF.DEG <- modify_cluster(cluster.0_3.HF_vs_MF.DEG, "ctx3")
+
+
+
+ctx.condition.DEG <- rbind(marker.cluster.ctx_0.HF_vs_MF.DEG, marker.cluster.ctx_1.HF_vs_MF.DEG,
+                           marker.cluster.ctx_2.HF_vs_MF.DEG, marker.cluster.ctx_3.HF_vs_MF.DEG)
+
+ctx.condition.DEG <- ctx.condition.DEG%>%arrange(cluster,sig)
+
+ctx.condition.DEG$padj_log10_neg <-  -log10(ctx.condition.DEG$p_val_adj)
+ctx.condition.DEG$padj_log10_neg <- ifelse(ctx.condition.DEG$avg_log2FC > 0,
+                                        ctx.condition.DEG$padj_log10_neg,
+                                        -ctx.condition.DEG$padj_log10_neg)
+```
+
+
+```{r}
+
+ctx.condition.DEG$condition[ctx.condition.DEG$sig == "not_sig"] <- "NS"
+
+color_ct <- c("Up"="red", "Down"="blue", "not_sig"="#dee1e6")
+
+ctx.plot.list=list()
+for (ci in c("ctx0","ctx1","ctx2","ctx3")) {
+  print(ci)
+  tmpdf=ctx.condition.DEG %>% filter(cluster == ci)
+  minabs=abs(min(tmpdf$padj_log10_neg))
+  maxabs=max(tmpdf$padj_log10_neg)
+  thre=0
+  if(minabs < maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > minabs] = minabs
+    thre=minabs
+  }
+  if(minabs > maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-maxabs)] = -maxabs
+    thre=maxabs
+  }
+  if(minabs == maxabs & maxabs == Inf) {
+    thre = min(
+      abs(
+        range(
+          tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < Inf & tmpdf$padj_log10_neg > -Inf]
+        )
+      )
+    )
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-thre)] = -thre
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > thre] = thre
+  }
+  
+  plotdata = tmpdf
+  tmpdf=tmpdf%>%filter(sig != "not") #这里我取了logFC最极端的几个gene来标注文本，实际处理中不一定这样做
+  tmpdf=tmpdf%>%arrange(desc(avg_log2FC))
+  tmpdf.a=head(tmpdf%>%filter(avg_log2FC > 0),5)
+  tmpdf.a$d=thre*2*0.05+(-thre)-tmpdf.a$padj_log10_neg
+  tmpdf.b=tail(tmpdf%>%filter(avg_log2FC < 0),5)
+  tmpdf.b$d=thre*2*0.95-thre  - tmpdf.b$padj_log10_neg
+  textdata.down = tmpdf.b
+  textdata.up   = tmpdf.a
+  
+  ###画图
+  tmpplot=plotdata%>%ggplot(aes(x=padj_log10_neg,y=avg_log2FC))+
+    geom_point(aes(color=condition),size=3)+
+    geom_hline(yintercept = c(-log2(1.2),log2(1.2)),linetype="dashed")+
+    geom_hline(yintercept = c(0),linetype="solid")+
+    labs(title = ci)+
+    scale_color_manual(values =  c("Up" = "red", "Down" = "blue", "NS" = "grey"))+
+    scale_y_continuous("log2(Fold Change)",expand = c(0.02,0),limits = c(-3,3))+
+    theme_bw()+
+    theme(
+      panel.grid = element_blank(),
+      legend.position = "none",
+      
+      axis.ticks.x.bottom = element_blank(),
+      axis.text.x.bottom = element_blank(),
+      axis.title.x.bottom = element_blank(),
+      axis.text.y.left = element_text(size = 14,color = "black"),
+      axis.title.y.left = element_text(size = 16),
+      
+      plot.title = element_text(size = 16,hjust = 0.5)
+    )
+  
+  index=which(ci == c("ctx0","ctx1","ctx2","ctx3"))
+  if (index!=1) {
+    tmpplot=tmpplot+theme(
+      axis.title.y.left = element_blank(),
+      axis.ticks.y.left = element_blank(),
+      axis.text.y.left = element_blank()
+    )
+  }
+
+  ctx.plot.list[[get("index")]]=tmpplot
+} 
+
+wrap_plots(ctx.plot.list,ncol = 6)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+```
+
+
+
+
+```{r}
+wrap_plots(c(hip.plot.list,ctx.plot.list),ncol = 8)&theme(plot.margin = unit(c(0,0,0,0.1),"cm"))
+
+
+ggsave('./High_resolution/TransformVolcano.hip0.1.ctx0.15.merged.tiff', device='tiff', dpi=500,
+       height = 8, width = 16, unit = 'in')
+```
+
+
+```{r ctx barplot}
+# List all variables in the environment
+all_vars <- ls()
+
+# Find variables starting with "cluster." and containing "HF_vs_MF.DEG"
+cortex.matching_vars <- grep("^cluster\\.0_\\d+\\.HF_vs_MF\\.DEG", all_vars, value = TRUE)
+
+
+cortex.upregulated_counts <- numeric(4)
+cortex.downregulated_counts <- numeric(4)
+
+for (cluster in cortex.matching_vars) {
+  deg_list <- get(cluster)
+  i <- match(cluster,cortex.matching_vars)
+  # Filter by adjusted p-value and log fold change
+  deg_list_filtered <- deg_list %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+  
+  # Count the number of upregulated and downregulated genes
+  cortex.upregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC > 0)
+  cortex.downregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC < 0)
+}
+
+cortex.downregulated_counts <- -cortex.downregulated_counts
+
+# Create a dataframe for plotting
+cortex.deg_counts <- data.frame(
+  cluster = factor(rep(cortex.matching_vars, 2), levels = c(cortex.matching_vars)),
+  direction = factor(rep(c("Upregulated", "Downregulated"), each = 4)),
+  count = c(cortex.upregulated_counts, cortex.downregulated_counts)
+)
+
+# Create the barplot
+
+ggplot(cortex.deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  # geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(cortex.deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_blank(), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave('./High_resolution/barplt.cortex0.15.withoutnumber.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+ggplot(cortex.deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(cortex.deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave('./High_resolution/barplt.cortex0.15.withnumber.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+
+
+
+```{r ctx_filter}
+cluster.cortex_0.HF_vs_MF.filter.DEG <- cluster.0_0.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_1.HF_vs_MF.filter.DEG <- cluster.0_1.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_2.HF_vs_MF.filter.DEG <- cluster.0_2.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_3.HF_vs_MF.filter.DEG <- cluster.0_3.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+```
+
+
+
+
+
+```{r}
+for ( i in c(0:3)){
+  assign(paste("cluster.cortex_",i,".HF_vs_MF.filter.DEG.entrez", sep = ""),
+         bitr(rownames(get(paste("cluster.cortex_",i,".HF_vs_MF.filter.DEG", sep = ""))), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db"))
+}
+
+
+
+ctx.GO.compare <- list(ctx_0 = cluster.cortex_0.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_1 = cluster.cortex_1.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_2 = cluster.cortex_2.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_3 = cluster.cortex_3.HF_vs_MF.filter.DEG.entrez$ENTREZID)
+
+
+ctx.ck <- compareCluster(geneCluster = ctx.GO.compare, fun = enrichGO,OrgDb="org.Mm.eg.db", ont = "BP")
+ctx.ck <- setReadable(ctx.ck, OrgDb = org.Mm.eg.db, keyType="ENTREZID")
+
+
+ctx.ck <- pairwise_termsim(ctx.ck)
+ctx.ck1 <- simplify(ctx.ck)
+ctx.ck2 <- simplify(ctx.ck, by = "Count", select_fun = max)
+```
+
+
+```{r}
+ctx.ck1.res <- ctx.ck1@compareClusterResult[ctx.ck1@compareClusterResult$p.adjust < 0.05,]
+
+# Compute -log10(p.adj)
+ctx.ck1.res$padj_log <- -log10(ctx.ck1.res$p.adjust)
+
+ctx.ck1.res <- ctx.ck1.res %>% group_by(Cluster)  %>% top_n(5, padj_log)
+
+# Melt data for heatmap
+ctx.ck1.res.melt <- melt(ctx.ck1.res[,c("Description","padj_log", "Cluster")], id.vars=c("Description", "Cluster"))
+
+
+
+# Plot Heatmap
+ggplot(ctx.ck1.res.melt, aes(x=Cluster, y=Description)) + 
+  geom_tile(aes(fill=value), colour="white") + 
+  scale_fill_gradient(low="steelblue", high="red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.background = element_blank(),
+        panel.grid.major = element_line(color = "grey92"),  # Major grid lines
+        panel.grid.minor = element_line(color = "grey95"),  # Minor grid lines
+        panel.border = element_rect(size = 1,fill = NA)) # 网格， panel boder = grid width
+
+ggsave('./High_resolution/ctx.sub.GO.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+```{r}
+library(rrvgo)
+```
+
+
+
+```{r}
+
+ego.res <- ctx.ck1.res[ctx.ck1.res$Cluster == "ctx_3",]
+
+simMatrix <- calculateSimMatrix(ego.res$ID,
+                                orgdb="org.Mm.eg.db",
+                                ont="BP",
+                                method="Rel")
+scores <- setNames(-log10(ego.res$p.adjust),
+                   ego.res$ID)
+
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                orgdb="org.Mm.eg.db")
+
+treemapPlot(reducedTerms)
+
+```
+
+```{r}
+save.image("temp6.Rdata")
+```
+
+
+
+
+```{r}
+library(ComplexHeatmap)
+```
+
+
+
+```{r}
+ctx.ck1.res.df.new <- data.frame(pathway = unique(ctx.ck1.res.melt$Description))
+ctx.ck1.res.df.new$ctx0 <- 0
+ctx.ck1.res.df.new$ctx1 <- 0
+ctx.ck1.res.df.new$ctx2 <- 0
+ctx.ck1.res.df.new$ctx3 <- 0
+rownames(ctx.ck1.res.df.new) <- ctx.ck1.res.df.new$pathway
+ctx.ck1.res.df.new <- ctx.ck1.res.df.new[-1]
+
+
+# assign value
+ctx.ck1.res.df.new$ctx0 <- ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_0",]$value[match(rownames(ctx.ck1.res.df.new),
+                                                        ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_0",]$Description)]
+
+
+ctx.ck1.res.df.new$ctx1 <- ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_1",]$value[match(rownames(ctx.ck1.res.df.new),
+                                                        ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_1",]$Description)]
+
+ctx.ck1.res.df.new$ctx2 <- ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_2",]$value[match(rownames(ctx.ck1.res.df.new),
+                                                        ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_2",]$Description)]
+
+ctx.ck1.res.df.new$ctx3 <- ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_3",]$value[match(rownames(ctx.ck1.res.df.new),
+                                                        ctx.ck1.res.melt[ctx.ck1.res.melt$Cluster == "ctx_3",]$Description)]
+
+
+
+
+ctx.ck1.res.df.new[is.na(ctx.ck1.res.df.new)] <- 0
+
+
+library(viridis)
+
+
+
+heatmap(as.matrix(ctx.ck1.res.df.new),
+        col = viridis(11))
+
+#https://www.data-to-viz.com/graph/heatmap.html
+library(heatmaply)
+
+# COLOR GREEN for cortex, blue
+heatmaply(as.matrix(ctx.ck1.res.df.new), 
+        dendrogram = "none",
+        xlab = "", ylab = "", 
+        col = c("white","#F8766D"),
+        main = "",
+        grid_color = "black",
+        grid_width = 0.00001,
+        titleX = FALSE,
+        hide_colorbar = F,
+        fontsize_row = 20, fontsize_col = 20,
+        labCol = colnames(as.matrix(ctx.ck1.res.df.new)),
+        labRow = rownames(as.matrix(ctx.ck1.res.df.new)),
+        heatmap_layers = theme(axis.line=element_blank())
+        )
+ggsave('./High_resolution/sub.ctx.go.bp1.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+heatmaply(as.matrix(ctx.ck1.res.df.new), 
+        dendrogram = "none",
+        xlab = "", ylab = "", 
+        col = c("white","#F8766D"),
+        main = "",
+        grid_color = "black",
+        grid_width = 0.00001,
+        titleX = FALSE,
+        hide_colorbar = T,
+        showticklabels = c(F, FALSE),
+        fontsize_row = 0, fontsize_col = 0,
+        labCol = colnames(as.matrix(ctx.ck1.res.df.new)),
+        labRow = rownames(as.matrix(ctx.ck1.res.df.new)),
+        heatmap_layers = theme(axis.line=element_blank())
+        )
+
+ggsave('./High_resolution/sub.ctx.go.bp2.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+```{r ctx_filter}
+cluster.hippocampus_0.HF_vs_MF.filter.DEG <- cluster.hippocampus_0.HF_vs_MF.DEG %>% 
+  dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2))
+
+cluster.hippocampus_1.HF_vs_MF.filter.DEG <- cluster.hippocampus_1.HF_vs_MF.DEG %>% 
+  dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2))
+
+cluster.hippocampus_2.HF_vs_MF.filter.DEG <- cluster.hippocampus_2.HF_vs_MF.DEG %>% 
+  dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2))
+
+cluster.hippocampus_3.HF_vs_MF.filter.DEG <- cluster.hippocampus_3.HF_vs_MF.DEG %>% 
+  dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2)) # , pct.1 > 0.1, pct.2 > 0.1
+```
+
+
+
+```{r}
+for ( i in c(0:3)){
+  assign(paste("cluster.hippocampus_",i,".HF_vs_MF.filter.DEG.entrez", sep = ""),
+         bitr(rownames(get(paste("cluster.hippocampus_",i,".HF_vs_MF.filter.DEG", sep = ""))), 
+              fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db"))
+}
+
+
+
+hip.GO.compare <- list(hip_0 = cluster.hippocampus_0.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       hip_1 = cluster.hippocampus_1.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       hip_2 = cluster.hippocampus_2.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       hip_3 = cluster.hippocampus_3.HF_vs_MF.filter.DEG.entrez$ENTREZID)
+
+
+hip.ck <- compareCluster(geneCluster = hip.GO.compare, fun = enrichGO,OrgDb="org.Mm.eg.db", ont = "BP")
+hip.ck <- setReadable(hip.ck, OrgDb = org.Mm.eg.db, keyType="ENTREZID")
+
+
+hip.ck <- pairwise_termsim(hip.ck)
+hip.ck1 <- simplify(hip.ck)
+```
+
+
+
+```{r}
+
+hip.ck1.res <- hip.ck1@compareClusterResult[hip.ck1@compareClusterResult$p.adjust < 0.05,]
+
+# Compute -log10(p.adj)
+hip.ck1.res$padj_log <- -log10(hip.ck1.res$p.adjust)
+
+hip.ck1.res <- hip.ck1.res %>% group_by(Cluster)  %>% top_n(5, padj_log)
+
+# Melt data for heatmap
+hip.ck1.res.melt <- melt(hip.ck1.res[,c("Description","padj_log", "Cluster")], id.vars=c("Description", "Cluster"))
+
+
+hip.ck1.res.df.new <- data.frame(pathway = unique(hip.ck1.res.melt$Description))
+hip.ck1.res.df.new$hip0 <- 0
+hip.ck1.res.df.new$hip1 <- 0
+hip.ck1.res.df.new$hip2 <- 0
+hip.ck1.res.df.new$hip3 <- 0
+rownames(hip.ck1.res.df.new) <- hip.ck1.res.df.new$pathway
+hip.ck1.res.df.new <- hip.ck1.res.df.new[-1]
+
+
+# assign value
+hip.ck1.res.df.new$hip0 <- hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_0",]$value[match(rownames(hip.ck1.res.df.new),
+                                                        hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_0",]$Description)]
+
+
+hip.ck1.res.df.new$hip1 <- hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_1",]$value[match(rownames(hip.ck1.res.df.new),
+                                                        hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_1",]$Description)]
+
+hip.ck1.res.df.new$hip2 <- hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_2",]$value[match(rownames(hip.ck1.res.df.new),
+                                                        hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_2",]$Description)]
+
+hip.ck1.res.df.new$hip3 <- hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_3",]$value[match(rownames(hip.ck1.res.df.new),
+                                                        hip.ck1.res.melt[hip.ck1.res.melt$Cluster == "hip_3",]$Description)]
+
+
+
+
+hip.ck1.res.df.new[is.na(hip.ck1.res.df.new)] <- 0
+```
+
+
+```{r}
+heatmaply(as.matrix(hip.ck1.res.df.new), 
+        dendrogram = "none",
+        xlab = "", ylab = "", 
+        col = c("white","#00BFC4"),
+        main = "",
+        grid_color = "black",
+        grid_width = 0.00001,
+        titleX = FALSE,
+        hide_colorbar = F,
+        fontsize_row = 10, fontsize_col = 20,
+        labCol = colnames(as.matrix(hip.ck1.res.df.new)),
+        labRow = rownames(as.matrix(hip.ck1.res.df.new)),
+        heatmap_layers = theme(axis.line=element_blank())
+        )
+
+ggsave('./High_resolution/sub.hip.go.bp1.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+heatmaply(as.matrix(hip.ck1.res.df.new), 
+        dendrogram = "none",
+        xlab = "", ylab = "", 
+        col = c("white","#00BFC4"),
+        main = "",
+        grid_color = "black",
+        grid_width = 0.00001,
+        titleX = FALSE,
+        hide_colorbar = T,
+        showticklabels = c(F, FALSE),
+        fontsize_row = 0, fontsize_col = 0,
+        labCol = colnames(as.matrix(hip.ck1.res.df.new)),
+        labRow = rownames(as.matrix(hip.ck1.res.df.new)),
+        heatmap_layers = theme(axis.line=element_blank())
+        )
+
+ggsave('./High_resolution/sub.hip.go.bp2.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r cotex_sub_marker_Vlnplot}
+ctx.obj$cortex.cluster.0.15 <- factor(ctx.obj$cortex.cluster.0.15, levels = c("0_0","0_1","0_2","0_3"))
+Idents(ctx.obj) <- ctx.obj$cortex.cluster.0.15
+
+VlnPlot(ctx.obj, 
+        features = c("Fezf2",
+                     "Col1a1",
+                     "Stard8",
+                     "Rxrg"),
+        stack = T,
+        flip = T)
+
+
+ggsave('./High_resolution/Vln.ctx.sub.marker.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+```{r hip_sub_marker_Vlnplot}
+hip.obj$hippocampus.cluster.0.1 <- factor(hip.obj$hippocampus.cluster.0.1, levels = c("hippocampus_0","hippocampus_1","hippocampus_2","hippocampus_3"))
+Idents(hip.obj) <- hip.obj$hippocampus.cluster.0.1
+
+
+temp.df <- hip.sub.allmarker[hip.sub.allmarker$cluster == "hippocampus_0",]
+temp.df$pct.dff <- temp.df$pct.1 - temp.df$pct.2
+
+
+VlnPlot(hip.obj, 
+        features = c("Thbs4", # Thbs4
+                     "Dsp",
+                     "Spink8", #Spink8
+                     "Ptgs2"),
+        stack = T,
+        flip = T)
+
+ggsave('./High_resolution/Vln.hip.sub.marker.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+
+```{r}
+
+feature.gene <- c("Fezf2",
+                     "Col1a1",
+                     "Stard8",
+                     "Rxrg",
+                  "Thbs4", # Thbs4
+                     "Dsp",
+                     "Spink8", #Spink8
+                     "Ptgs2")
+
+SpatialFeaturePlot(merge.obj, features = feature.gene, images = rep.images[1])
+SpatialFeaturePlot(merge.obj, features = feature.gene, images = rep.images[2]) 
+SpatialFeaturePlot(merge.obj, features = feature.gene, images = rep.images[3])
+SpatialFeaturePlot(merge.obj, features = feature.gene, images = rep.images[4])
+
+```
+
+
+
+
+
+```{r}
+feature.genes <- c("Fezf2",
+                     "Col1a1",
+                     "Stard8",
+                     "Rxrg",
+                  "Thbs4", # Thbs4
+                     "Dsp",
+                     "Spink8", #Spink8
+                     "Ptgs2")
+
+midit <- theme(plot.title = element_text(size=12,hjust=0.5),legend.position = "none")
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,2,4,6,8),colors = SpatialColors(n = 100))
+
+for (gene in feature.genes){
+  SpatialFeaturePlot(merge.obj, features = gene, images = rep.images[1]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.feature.htmp.",gene,".",rep.images[1],".tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+  
+  SpatialFeaturePlot(merge.obj, features = gene, images = rep.images[2]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.feature.htmp.",gene,".",rep.images[2],".tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+  
+  SpatialFeaturePlot(merge.obj, features = gene, images = rep.images[3]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.feature.htmp.",gene,".",rep.images[3],".tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+  
+  SpatialFeaturePlot(merge.obj, features = gene, images = rep.images[4]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.feature.htmp.",gene,".",rep.images[4],".tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+}
+
+
+SpatialFeaturePlot(merge.obj, features = gene, images = rep.images[1]) + midit + fix.sc
+ggsave(paste("./High_resolution/Spatial.colorbar.tiff",sep = ""), device='tiff', dpi=500, 
+     height = 8, width = 8, unit = 'in')
+```
+
+
+
+
+
+```{r Spatial Fold Change}
+
+FC_value_Calculation_new <- function(merge.obj,target_gene){
+  DefaultAssay(merge.obj) <- "Spatial"
+  Idents(merge.obj) <- "condition"
+  merge.obj@meta.data[toupper(target_gene)] <- 0
+  avg.df <- data.frame(AverageExpression(merge.obj,features = target_gene,assays = "Spatial", group.by = "condition"))
+  ID <- FetchData(merge.obj,vars = "specified_anatomy")
+  # Fold change
+  for (i in unique(ID$specified_anatomy)) {
+    FC <- log2(avg.df[paste("Spatial.",i,"_hf",sep = "")]/avg.df[paste("Spatial.",i,"_mf",sep = "")])
+    if(avg.df[paste("Spatial.",i,"_mf",sep = "")][[1]] == 0){FC <- NA}
+    if(avg.df[paste("Spatial.",i,"_mf",sep = "")][[1]] == 0 & avg.df[paste("Spatial.",i,"_hf",sep = "")][[1]] > 0){FC <- Inf}
+    if(!is.na(FC)){
+      if(FC > 3){FC <- 3}
+      if(FC < -3){FC <- -3}
+      }
+    
+    merge.obj@meta.data[rownames(ID)[ID$specified_anatomy == i],toupper(target_gene)] <- FC
+  }
+  # return key elements
+  return(merge.obj)
+}
+
+
+```
+
+
+
+```{r specified anatomy}
+merge.obj$specified_anatomy <- merge.obj$hippocampus.cluster.0.1
+
+# hippocampus.cluster.0.1 cortex.cluster.0.15
+cortex.id <- names(merge.obj$specified_anatomy[merge.obj$specified_anatomy == 0])
+
+merge.obj$specified_anatomy[cortex.id] <- merge.obj$cortex.cluster.0.15[cortex.id]
+
+merge.obj$condition <- paste(merge.obj$specified_anatomy,merge.obj$FA, sep = "_")
+
+```
+
+
+
+
+
+
+```{r}
+target_genes <- c("Oxt", "Egr1", "Pmch", "Casp7", "Depdc1b", "Wnt3", "Sncg", "Tac2", "Sox10", "Plpp2", "Scube1", "Syt9")
+
+for (gene in target_genes){
+  merge.obj <- FC_value_Calculation_new(merge.obj,gene)
+  
+  SpatialFeaturePlot(merge.obj, features = toupper(gene), images = rep.images[1]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.FC.",gene,".",rep.images[1],".htmp.tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+  
+  SpatialFeaturePlot(merge.obj, features = toupper(gene), images = rep.images[2]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.FC.",gene,".",rep.images[2],".htmp.tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+  
+  SpatialFeaturePlot(merge.obj, features = toupper(gene), images = rep.images[3]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.FC.",gene,".",rep.images[3],".htmp.tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+  
+  SpatialFeaturePlot(merge.obj, features = toupper(gene), images = rep.images[4]) + midit + fix.sc
+  ggsave(paste("./High_resolution/Spatial.FC.",gene,".",rep.images[4],".htmp.tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+}
+
+
+SpatialFeaturePlot(merge.obj, features = "Oxt", images = rep.images) 
+```
+
+
+Mag
+Gal3st1
+Ugt8a
+Pllp
+Ormdl3
+Plp1
+Lpar1
+Mal
+Tspan2
+Mbp
+Egr1
+Arc
+
+```{r}
+target_genes.2 <- c("Mag", "Gal3st1", "Ugt8a", "Pllp", "Ormdl3", "Plp1", "Lpar1", "Mal", "Tspan2", "Mbp", "Egr1", "Arc")
+
+for (gene in target_genes.2){
+  merge.obj <- FC_value_Calculation_new(merge.obj,gene)
+  
+  SpatialFeaturePlot(merge.obj, features = toupper(gene), images = rep.images[1]) + midit + fix.sc
+  ggsave(paste("./High_resolution/target.2/Spatial.FC.",gene,".",rep.images[1],".htmp.tiff",sep = ""), device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+}
+
+
+
+  
+
+SpatialDimPlot(merge.obj, group.by = "hippocampus.cluster.0.1")
+
+hip.obj <- merge.obj
+Idents(hip.obj) <- "hippocampus.cluster.0.1"
+save(hip.obj, file = "sp.Rdata")
+```
+
+
+
+Visium cortex and HP，你都可以用+1产生fold change，我想要这两个DEG list来选择target genes，
+另外，这两个表格能否再加两行: average expression level for HF and MF.
+
+用了+1后，pct是否>10%好像也没有关系，如果表达都非常低，都会被+1过滤掉。
+```{r Hippocampus marker with Average expression + 1}
+
+Idents(merge.obj) <- merge.obj$anatomy
+
+# Cortex
+cortex.DEG.new <- FindMarkers(merge.obj, ident.1 = "hf",ident.2 = "mf", group.by = 'FA', subset.ident = "0",
+                     logfc.threshold = 0, pseudocount.use = 1)
+cortex.DEG.new.mod <- cortex.DEG.new
+
+
+
+# Hippocampus
+hip.DEG.new <- FindMarkers(merge.obj, ident.1 = "hf",ident.2 = "mf", group.by = 'FA', subset.ident = "hippocampus",
+                     logfc.threshold = 0, pseudocount.use = 1)
+hip.DEG.new.mod <- hip.DEG.new
+
+
+
+
+merge.obj$anatomy_condition <- paste(merge.obj$anatomy,merge.obj$FA,sep = "_")
+
+hip.avg <- as.data.frame(AverageExpression(merge.obj, features = rownames(hip.DEG.new.mod),group.by = "anatomy_condition"))
+hip.DEG.new.mod$avg_mf <- hip.avg$Spatial.hippocampus_mf
+hip.DEG.new.mod$avg_hf <- hip.avg$Spatial.hippocampus_hf
+
+cortex.avg <- as.data.frame(AverageExpression(merge.obj, features = rownames(cortex.DEG.new.mod),group.by = "anatomy_condition"))
+cortex.DEG.new.mod$avg_mf <- cortex.avg$Spatial.0_mf
+cortex.DEG.new.mod$avg_hf <- cortex.avg$Spatial.0_hf
+
+
+write.csv(cortex.DEG.new.mod, file = "cortex.DEG.new.plusFC.csv")
+write.csv(hip.DEG.new.mod, file = "hip.DEG.new.plusFC.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

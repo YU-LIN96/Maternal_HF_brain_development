@@ -1,0 +1,494 @@
+---
+title: "figure.update"
+author: "Yu"
+date: "2024-05-13"
+output: html_document
+---
+
+
+
+
+Figure S3: expand to include correlation heatmap after normalization
+Test 6 regions “psedobulk” correlation between MF/HF groups; 6x4   
+
+```{r}
+
+rep.images <- unique(merge.obj$orig.ident)
+rep.images <- as.character(rep.images)
+
+merge.obj$anatomy.v2 <- as.character(merge.obj$anatomy)
+merge.obj$anatomy.v2[merge.obj$anatomy.v2 == "0"] <- "CTX"
+merge.obj$anatomy.v2[merge.obj$anatomy.v2 == "1"] <- "HY"
+merge.obj$anatomy.v2[merge.obj$anatomy.v2 == "2"] <- "TH"
+merge.obj$anatomy.v2[merge.obj$anatomy.v2 == "hippocampus"] <- "HP"
+merge.obj$anatomy.v2[merge.obj$anatomy.v2 == "4"] <- "STR"
+merge.obj$anatomy.v2[merge.obj$anatomy.v2 == "5"] <- "VS"
+
+merge.obj$anatomy.v2 <- factor(merge.obj$anatomy.v2, levels = c("CTX","HY","TH","HP","STR","VS"))
+```
+
+
+```{r}
+SpatialDimPlot(merge.obj,pt.size.factor = 1.8,images = rep.images[1], group.by = "anatomy.v2")
+```
+
+# Average Expression
+```{r}
+merge.obj$combine.anatomy.sample <- paste0(merge.obj$anatomy.v2,".",as.character(merge.obj$orig.ident))
+avg.combine.anatomy.sample <- AverageExpression(merge.obj,group.by = "combine.anatomy.sample")
+avg.combine.anatomy.sample <- as.data.frame(avg.combine.anatomy.sample$Spatial)
+
+avg.combine.anatomy.sample <- avg.combine.anatomy.sample[rowSums(avg.combine.anatomy.sample) > 0,]
+```
+
+
+```{r}
+library(GGally)
+```
+
+```{r}
+ggpairs(avg.combine.anatomy.sample, columns = 1:24)
+```
+
+
+
+# Aggregate and normalize again
+```{r}
+raw.count <- merge.obj@assays$Spatial@counts
+raw.count <- t(raw.count)
+raw.count <- as.data.frame(raw.count)
+
+temp.df <- FetchData(merge.obj, vars = "combine.anatomy.sample")
+
+raw.count$aggre <- temp.df$combine.anatomy.sample[match(rownames(raw.count),rownames(temp.df))]
+
+```
+
+
+```{r}
+# Convert raw.count to a tibble for easier manipulation
+raw.count.tb <- as_tibble(raw.count)
+
+# Group by 'aggre' and summarize each gene's count
+pseudobulk <- raw.count.tb %>%
+  group_by(aggre) %>%
+  summarize(across(everything(), sum, .names = "{.col}"))
+
+pseudobulk <- as.data.frame(t(pseudobulk))
+
+colnames(pseudobulk) <- pseudobulk["aggre",]
+pseudobulk <- pseudobulk[-1,]
+
+pseudobulk_numeric <- pseudobulk %>%
+  mutate(across(everything(), ~as.numeric(trimws(.))))
+```
+
+
+
+```{r}
+column_sums <- colSums(pseudobulk_numeric, na.rm = TRUE)
+
+pseudobulk.cpm <- sweep(pseudobulk_numeric, 2, column_sums, FUN = "/") * 10^6
+```
+
+
+
+```{r}
+cor_matrix <- cor(pseudobulk_numeric, use = "pairwise.complete.obs")
+colnames(cor_matrix)
+```
+
+
+```{r}
+library(corrplot)
+
+# Plot the correlation matrix
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust",
+         tl.col = "black", tl.srt = 45, # Text label color and rotation
+         diag = FALSE)  # Hide diagonal
+
+
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "black", tl.srt = 45, # Text label color and rotation
+         diag = T)  # Hide diagonal
+
+col_pal <- colorRampPalette(c("#F0C9CF","#66A9C9"))(200)
+
+corrplot(cor_matrix,  addrect = 2,
+         col = COL2('PiYG'),is.corr = FALSE,
+         col.lim = c(0,1))
+
+
+
+corrplot(cor_matrix,  addrect = 2,
+         col = rev(COL2('RdBu', 20)),
+         is.corr = FALSE,
+         tl.pos = 'l',tl.col = 'black',
+         col.lim = c(0,1))
+
+corrplot(cor_matrix, method = "color",
+         col = rev(COL2('RdBu', 20)),
+         is.corr = FALSE,
+         tl.pos = 'l',tl.col = 'black',
+         col.lim = c(0,1))
+
+corrplot(cor_matrix, method = "color",
+         col = rev(COL2('RdBu', 20)),
+         is.corr = FALSE,order = 'hclust',
+         tl.pos = 'l',tl.col = 'black',
+         col.lim = c(0,1))
+
+corrplot(cor_matrix, method = "color",
+         col = rev(COL2('RdBu', 20)),
+         is.corr = FALSE,addgrid.col = 'white',
+         tl.pos = 'n',tl.col = 'black',
+         col.lim = c(0,1))
+
+corrplot(cor_matrix, method = "color",
+         col = rev(COL2('RdBu', 20)),
+         is.corr = FALSE,addgrid.col = 'white',
+         tl.pos = 'l',tl.col = 'black',
+         col.lim = c(0,1))
+
+corrplot(cor_matrix, method = "color",col = rev(COL2('RdBu', 20)),is.corr = FALSE,addgrid.col = 'white',
+         tl.pos = 'n',tl.col = 'black',
+         col.lim = c(0,1)) %>%
+  corrRect(name = c("CTX.hf_p21_rep1", "HP.hf_p21_rep1", "HY.hf_p21_rep1", "STR.hf_p21_rep1",
+                    "TH.hf_p21_rep1","VS.hf_p21_rep1","VS.mf_p21_rep2"))
+
+corrplot(cor_matrix, method = "color",col = rev(COL2('RdBu', 20)),is.corr = FALSE,addgrid.col = 'white',
+         tl.pos = 'l',tl.col = 'black',
+         col.lim = c(0,1)) %>%
+  corrRect(name = c("CTX.hf_p21_rep1", "HP.hf_p21_rep1", "HY.hf_p21_rep1", "STR.hf_p21_rep1",
+                    "TH.hf_p21_rep1","VS.hf_p21_rep1","VS.mf_p21_rep2"),
+           col = "green")
+```
+
+
+
+
+
+```{r}
+sample <- colnames(cor_matrix)
+
+extracted_parts <- sapply(strsplit(sample, "\\_"), `[`, 1)
+
+region <- sapply(strsplit(sample, "\\."), `[`, 1)
+condition <- sapply(strsplit(extracted_parts, "\\."), `[`, 2)
+
+
+
+ha <- HeatmapAnnotation(region = region,
+                        condition = condition,
+                        col = list(region = c("CTX" = "#F8766D","HP" = "#00BFC4", "HY" = "#B79F00",
+                                              "STR" = "#619CFF", "TH" = "#00BA38", "VS" = "#F564E3"),
+                                   condition = c("hf" = "#F25A47", "mf" = "#428675")))
+
+Heatmap(cor_matrix,
+        cluster_rows = F, cluster_columns = F,show_row_names = F, show_column_names = F,
+        top_annotation = ha)
+```
+
+
+
+```{r}
+# Define a custom color palette
+col_pal <- colorRampPalette(c("red", "blue"))(200)
+
+# Plot the correlation matrix with improved labels and colors
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust",
+         tl.col = "black", tl.srt = 45, # Text label color and rotation
+         tl.cex = 0.8, # Text label size
+         col = col_pal, # Custom color palette
+         title = "Correlation Matrix", # Main title
+         mar = c(0, 0, 1, 0)) # Margins for title
+
+# Add rectangles to group similar clusters
+corrplot(cor_matrix, addrect = 2,
+         tl.col = "black", tl.srt = 45, # Text label color and rotation
+         tl.cex = 0.8, # Text label size
+         col = col_pal, # Custom color palette
+         title = "Correlation Matrix with Clusters", # Main title
+         mar = c(0, 0, 1, 0)) # Margins for title
+```
+
+
+
+```{r}
+# Convert the correlation matrix to a long format
+cor_data <- melt(cor_matrix)
+names(cor_data) <- c("Variable1", "Variable2", "Correlation")
+
+# Plot using ggplot2
+ggplot(cor_data, aes(Variable1, Variable2, fill = Correlation)) +
+    geom_tile() +  # Creates the tiles for heatmap
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0.5, limit = c(0, 1), space = "Lab", name="Correlation") +
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x axis labels
+          axis.title = element_blank()) +  # Remove axis titles
+    labs(fill = "Correlation")
+```
+
+
+a.	Sequencing and mapping statistics (Spatial transcriptomics; snRNA-seq, snATAC-seq).
+b.	Spatial: DEGs for major clusters; GO annotation for DEGs of major clusters.
+c.	Spatial: DEGs for cortex and hippocampus sub-clusters; GO annotation results.
+
+```{r}
+DefaultAssay(merge.obj) <- "Spatial"
+
+merge.obj$condition <- 0
+merge.obj$condition[grep("mf", merge.obj$orig.ident)] <- "MF"
+merge.obj$condition[grep("hf", merge.obj$orig.ident)] <- "HF"
+
+merge.obj$combined_condition <- paste(merge.obj$anatomy.v2,merge.obj$condition,sep = ".")
+
+Idents(merge.obj) <- "anatomy.v2" 
+
+for(ct in unique(merge.obj$anatomy.v2)){
+      marker <- FindMarkers(merge.obj,
+                           ident.1 = "HF", ident.2 = "MF", # HF vs MF
+                           group.by = 'condition',
+                           subset.ident = ct,
+                           pseudocount.use = 0.001)
+      
+      marker$brain.region <- ct
+      
+      marker$gene <- rownames(marker)
+      marker$regulation <- ifelse(marker$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+
+      marker$sig <- "not_sig"
+      marker$sig[abs(marker$avg_log2FC) > log2(1.2) & marker$p_val_adj < 0.05 & marker$pct.1 > 0.1 & marker$pct.2 > 0.1] <- paste(ct,
+                                                                                                                                  "sig",sep = "_")
+      marker$sig <- factor(marker$sig, levels = c("not_sig",paste(ct,"sig",sep = "_")))
+      
+      assign(paste(ct,"deg",sep = "."), marker)
+      
+      write.csv(marker, file = paste0("X:/Xie Lab/Data/single cell_results/DEG_tables/Final_tables/b/",paste(ct,"HFvsMF.DEG.csv", sep = ".")))
+      }
+```
+
+
+```{r}
+# List all variables ending with ".marker"
+variable_names <- ls(pattern="\\.deg$")
+
+# Retrieve the variables using mget
+variables <- mget(variable_names)
+
+# Save the variables to a file
+save(list=variable_names, file="marjor.deg.RData")
+```
+
+
+
+```{r}
+for(ct in unique(merge.obj$anatomy.v2)){
+  genelist <- get(paste(ct,"deg",sep = "."))
+  
+  genelist.sig <- genelist[genelist$sig != "not_sig",]
+
+  gene.df <- bitr(genelist.sig$gene, fromType = "SYMBOL",toType = "ENTREZID", OrgDb = org.Mm.eg.db) # 17930
+
+  ego <- enrichGO(gene = gene.df$ENTREZID,
+                  OrgDb = org.Mm.eg.db,
+                  ont = "BP",
+                  readable = T)
+  
+  assign(paste(ct,"GO",sep = "."), ego@result)
+  write.csv(ego@result, file = paste0("X:/Xie Lab/Data/single cell_results/DEG_tables/Final_tables/b/",paste(ct,"HFvsMF.DEG.GO.csv", sep = ".")))
+}
+```
+
+
+```{r}
+# List all variables ending with ".marker"
+variable_names <- ls(pattern="\\.GO$")
+
+# Retrieve the variables using mget
+variables <- mget(variable_names)
+
+# Save the variables to a file
+save(list=variable_names, file="marjor.GO.RData")
+```
+
+
+
+
+
+
+
+```{r}
+Idents(merge.obj) <- "hippocampus.cluster.0.1"
+
+hip.region <- c("HP.Matrix","HP.DG","HP.CA1","HP.CA3")
+cluster.name <- c("hippocampus_0","hippocampus_1","hippocampus_2","hippocampus_3")
+
+for(i in 1:4){
+      ct <- cluster.name[i]
+      marker <- FindMarkers(merge.obj,
+                               ident.1 = "HF", ident.2 = "MF", # HF vs MF
+                               group.by = 'condition',
+                               subset.ident = ct,
+                               logfc.threshold = 0, pseudocount.use = 0)
+      marker$brain.region <- hip.region[i]
+      
+      marker$gene <- rownames(marker)
+      marker$regulation <- ifelse(marker$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+
+      marker$sig <- "not_sig"
+      marker$sig[abs(marker$avg_log2FC) > log2(1.2) & marker$p_val_adj < 0.05] <- paste(ct,"sig",sep = "_")
+      marker$sig <- factor(marker$sig, levels = c("not_sig",paste(ct,"sig",sep = "_")))
+      
+      assign(paste(hip.region[i],"deg",sep = "."), marker)
+  
+  write.csv(marker, file = paste0("X:/Xie Lab/Data/single cell_results/DEG_tables/Final_tables/c/",
+                                  paste(hip.region[i],"HFvsMF.DEG.csv", sep = ".")))
+  }
+```
+
+
+```{r}
+for(i in 1:4){
+  ct <- hip.region[i]
+  
+  genelist <- get(paste(ct,"deg",sep = "."))
+  genelist.sig <- genelist[genelist$sig != "not_sig",]
+
+  gene.df <- bitr(genelist.sig$gene, fromType = "SYMBOL",toType = "ENTREZID", OrgDb = org.Mm.eg.db) # 17930
+
+  ego <- enrichGO(gene = gene.df$ENTREZID,
+                  OrgDb = org.Mm.eg.db,
+                  ont = "BP",
+                  readable = T)
+  
+  write.csv(ego@result, file = paste0("X:/Xie Lab/Data/single cell_results/DEG_tables/Final_tables/c/",
+                                      paste(hip.region[i],"HFvsMF.DEG.GO.csv", sep = ".")))
+}
+```
+
+
+
+
+
+
+```{r}
+Idents(merge.obj) <- "cortex.cluster.0.15"
+
+ctx.region <- c("L4-6","L1","L2-3","OLF")
+cluster.name <- c("0_0","0_1","0_2","0_3")
+for(i in 1:4){
+      ct <- cluster.name[i]
+      marker <- FindMarkers(merge.obj,
+                               ident.1 = "HF", ident.2 = "MF", # HF vs MF
+                               group.by = 'condition',
+                               subset.ident = ct,
+                               logfc.threshold = 0, pseudocount.use = 0)
+      marker$brain.region <- ctx.region[i]
+      
+      marker$gene <- rownames(marker)
+      marker$regulation <- ifelse(marker$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+
+      marker$sig <- "not_sig"
+      marker$sig[abs(marker$avg_log2FC) > log2(1.2) & marker$p_val_adj < 0.05] <- paste(ct,"sig",sep = "_")
+      marker$sig <- factor(marker$sig, levels = c("not_sig",paste(ct,"sig",sep = "_")))
+      
+      assign(paste(ctx.region[i],"deg",sep = "."), marker)
+  
+  write.csv(marker, file = paste0("X:/Xie Lab/Data/single cell_results/DEG_tables/Final_tables/c/",
+                                  paste(ctx.region[i],"HFvsMF.DEG.csv", sep = ".")))
+  }
+```
+
+
+
+```{r}
+for(i in 1:4){
+  ct <- ctx.region[i]
+  
+  genelist <- get(paste(ct,"deg",sep = "."))
+  genelist.sig <- genelist[genelist$sig != "not_sig",]
+
+  gene.df <- bitr(genelist.sig$gene, fromType = "SYMBOL",toType = "ENTREZID", OrgDb = org.Mm.eg.db) # 17930
+
+  ego <- enrichGO(gene = gene.df$ENTREZID,
+                  OrgDb = org.Mm.eg.db,
+                  ont = "BP",
+                  readable = T)
+  
+  write.csv(ego@result, file = paste0("X:/Xie Lab/Data/single cell_results/DEG_tables/Final_tables/c/",
+                                      paste(ctx.region[i],"HFvsMF.DEG.GO.csv", sep = ".")))
+}
+```
+
+
+```{r}
+SpatialFeaturePlot(merge.obj, features = "Olig2", images = "hf_p21_rep1",crop = FALSE,
+                     pt.size.factor = 1)
+```
+
+
+```{r}
+library(magick)
+```
+
+
+
+```{r change saturation of image}
+test.image <- merge.obj@images$hf_p21_rep1@image
+
+
+# Convert the spatial image to a format compatible with magick
+image_path <- "test.png"
+png::writePNG(test.image, image_path, dpi = 300)
+
+
+
+image <- image_read(image_path)
+
+adjusted_image <- image_modulate(image, brightness = 100, saturation =  40)
+
+# Save the adjusted image
+adjusted_image_path <- "adjusted_test.png"
+image_write(adjusted_image, adjusted_image_path)
+
+# Display the adjusted image
+print(adjusted_image)
+
+# Load the adjusted image back into R
+adjusted_image_array <- png::readPNG(adjusted_image_path)
+
+# Create a new Seurat object with the adjusted image
+# Replace "hf_p21_rep1" with the name you want to give to the new image
+merge.obj@images$hf_p21_rep1@image <- adjusted_image_array
+
+```
+
+
+
+
+```{r}
+SpatialFeaturePlot(merge.obj, features = "Olig2", images = "hf_p21_rep1",crop = FALSE,
+                     pt.size.factor = 1.3)
+
+SpatialFeaturePlot(merge.obj, features = "Mbp", images = "hf_p21_rep1",crop = FALSE,
+                     pt.size.factor = 1.3)
+```
+
+
+
+```{r}
+VlnPlot(merge.obj, features = "Olig2", group.by = "orig.ident")
+```
+
+
+
+```{r}
+SpatialFeaturePlot(merge.obj, features = "Olig2", ncol = 2,crop = FALSE,
+                     pt.size.factor = 1.3)
+
+SpatialFeaturePlot(merge.obj, features = "Mbp", ncol = 2,crop = FALSE,
+                     pt.size.factor = 1.3)
+```
+
+

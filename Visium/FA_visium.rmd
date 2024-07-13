@@ -1,0 +1,2356 @@
+---
+title: "FA_visium"
+output: html_document
+date: "2023-03-25"
+---
+
+```{r}
+setwd("/projects/davidxie_lab/FA_raw/FA_spatial/")
+```
+
+
+
+
+```{r}
+library(rlang)
+library(Seurat)
+library(ggplot2)
+library(harmony)
+library(RColorBrewer)
+library(tidyverse)
+library(patchwork)
+
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(ggplot2)
+library(ggvenn)
+library(ComplexUpset)
+```
+
+
+
+
+```{r}
+hf_p21_rep1 <- Load10X_Spatial(data.dir = "./hf_p21_rep1/outs/",slice = "hf_p21_rep1")
+hf_p21_rep2 <- Load10X_Spatial(data.dir = "./hf_p21_rep2_tech2/outs/",slice = "hf_p21_rep2")
+mf_p21_rep1 <- Load10X_Spatial(data.dir = "./mf_p21_rep1/outs/",slice = "mf_p21_rep1")
+mf_p21_rep2 <- Load10X_Spatial(data.dir = "./mf_p21_rep2/outs/",slice = "mf_p21_rep2")
+```
+
+```{r}
+hf_p21_rep1$orig.ident <- "hf_p21_rep1"
+hf_p21_rep2$orig.ident <- "hf_p21_rep2"
+mf_p21_rep1$orig.ident <- "mf_p21_rep1"
+mf_p21_rep2$orig.ident <- "mf_p21_rep2"
+
+merge.obj <- merge(hf_p21_rep1,c(hf_p21_rep2,mf_p21_rep1,mf_p21_rep2),
+                   add.cell.ids = c("hf_p21_rep1","hf_p21_rep2","mf_p21_rep1","mf_p21_rep2"))
+
+
+# merge.obj <- merge(hf_p21_rep1,c(mf_p21_rep1,mf_p21_rep2),
+#                    add.cell.ids = c("hf_p21_rep1","mf_p21_rep1","mf_p21_rep2"))
+```
+
+```{r}
+range(merge.obj$nFeature_Spatial)
+
+sum(merge.obj$nFeature_Spatial <= 100)
+sum(merge.obj$nFeature_Spatial <= 200)
+ncol(merge.obj)
+
+sum(merge.obj$nFeature_Spatial <= 1000) # 35
+quantile(merge.obj$nFeature_Spatial,0.05) # 2847.3
+
+
+quantile(merge.obj$nCount_Spatial,0.05) #4766.2 
+```
+
+
+
+
+
+```{r}
+merge.obj <- subset(merge.obj, subset = nFeature_Spatial > 250 & nCount_Spatial > 500)
+merge.obj <- NormalizeData(merge.obj, scale.factor = 10**6)
+merge.obj <- FindVariableFeatures(merge.obj, nfeatures = 3000)
+merge.obj <- ScaleData(merge.obj, features = rownames(merge.obj))
+merge.obj <- RunPCA(merge.obj, npcs = 50, features = rownames(merge.obj))
+ElbowPlot(merge.obj,ndims = 50) + geom_hline(yintercept=3)+
+   scale_y_continuous(breaks = c(3,5,10,15))
+
+merge.obj <- RunHarmony(merge.obj,"orig.ident", dims.use = 1:25 ,assay.use = "Spatial", reduction = "pca")
+
+ElbowPlot(merge.obj,ndims = 50,reduction = "harmony") + geom_hline(yintercept=3)+
+   scale_y_continuous(breaks = c(3,5,10,15))
+
+merge.obj <- RunUMAP(merge.obj, dims = 1:25,reduction = "harmony")
+
+```
+
+
+```{r}
+DimPlot(merge.obj, split.by = "orig.ident", ncol = 2)
+DimPlot(merge.obj, group.by = "orig.ident")
+```
+
+
+```{r}
+merge.obj <- FindNeighbors(merge.obj, reduction = "harmony", dims = 1:25)
+merge.obj <- FindClusters(merge.obj, resolution = 0.3)
+
+merge.obj <- FindClusters(merge.obj, resolution = 0.05)
+merge.obj <- FindClusters(merge.obj, resolution = 0.075)
+```
+
+
+```{r}
+SpatialDimPlot(merge.obj, group.by = "Spatial_snn_res.0.05", ncol = 2,label = T)
+SpatialDimPlot(merge.obj, group.by = "Spatial_snn_res.0.075", ncol = 2,label = T)
+
+SpatialDimPlot(merge.obj, group.by = "Spatial_snn_res.0.075", ncol = 2,label = F)
+
+```
+
+
+
+```{r}
+
+
+# p1.df <- merge.obj@images[["hf_p21_rep1"]]@coordinates
+# p1.df$cluster <- merge.obj$seurat_clusters[rownames(p1.df)]
+# p1 <- p1.df %>%  ggplot(aes(x = imagecol, y = imagerow, color = cluster)) + geom_point()
+# 
+# 
+# p2.df <- merge.obj@images[["hf_p21_rep2"]]@coordinates
+# p2.df$cluster <- merge.obj$seurat_clusters[rownames(p2.df)]
+# p2 <- p2.df %>%  ggplot(aes(x = imagecol, y = imagerow, color = cluster)) + geom_point()
+# 
+# 
+# p3.df <- merge.obj@images[["mf_p21_rep1"]]@coordinates
+# p3.df$cluster <- merge.obj$seurat_clusters[rownames(p3.df)]
+# p3 <- p3.df %>%  ggplot(aes(x = imagecol, y = imagerow, color = cluster)) + geom_point()
+# 
+# 
+# p4.df <- merge.obj@images[["mf_p21_rep2"]]@coordinates
+# p4.df$cluster <- merge.obj$seurat_clusters[rownames(p4.df)]
+# p4 <- p4.df %>%  ggplot(aes(x = imagecol, y = imagerow, color = cluster)) + geom_point()
+
+
+# hip1 <- CellSelector(p1)
+# hip2 <- CellSelector(p2)
+# hip3 <- CellSelector(p3)
+# hip4 <- CellSelector(p4)
+# hip.crude <- names(merge.obj$Spatial_snn_res.0.075[merge.obj$Spatial_snn_res.0.075 == 3])
+hip.id <- intersect(hip.crude, c(hip1,hip2,hip3,hip4))
+
+save(hip1,hip2,hip3,hip4,hip.crude,hip.id, file = "HIP.ids.Rdata")
+
+```
+
+
+```{r}
+merge.obj$anatomy <- merge.obj$Spatial_snn_res.0.075
+merge.obj$anatomy <- as.character(merge.obj$anatomy)
+merge.obj$anatomy[hip.id] <- "hippocampus"
+merge.obj$anatomy <- as.factor(merge.obj$anatomy)
+
+
+SpatialDimPlot(merge.obj, group.by = "anatomy", ncol = 2,label = T)
+merge.obj$anatomy[merge.obj$anatomy == 3] <- 0
+SpatialDimPlot(merge.obj, group.by = "anatomy", ncol = 2,label = F)
+
+save(merge.obj, file = "merge.obj.1st.Rdata")
+```
+
+
+```{r}
+Idents(merge.obj) <- "anatomy"
+
+```
+
+
+
+
+
+
+# Quality Control
+```{r}
+merge.obj$orig.ident <- factor(merge.obj$orig.ident, levels = c("mf_p21_rep1","mf_p21_rep2","hf_p21_rep1","hf_p21_rep2"))
+
+# merge.obj[["percent.mt"]] <- PercentageFeatureSet(merge.obj, pattern = "^mt-")
+# VlnPlot(merge.obj, features = c("percent.mt"), group.by = "orig.ident")
+
+
+# Define your color palette
+color_palette <- c("mf_p21_rep1" = "lightblue", "mf_p21_rep2" = "lightgreen", "hf_p21_rep1" = "pink", "hf_p21_rep2" = "#fed8b1")
+color_palette <- c("mf_p21_rep1" = "dodgerblue", "mf_p21_rep2" = "navy", "hf_p21_rep1" = "lightcoral", "hf_p21_rep2" = "firebrick")
+color_palette <- c("mf_p21_rep1" = "skyblue1", "mf_p21_rep2" = "steelblue1", "hf_p21_rep1" = "lightcoral", "hf_p21_rep2" = "indianred1")
+
+
+# Create your Violin plot
+VlnPlot(merge.obj, features = c("nFeature_Spatial"), group.by = "orig.ident", pt.size = 0)+
+  scale_fill_manual(values = color_palette)
+
+ggsave('./High_resolution/Vln.nFeature.tiff', device='tiff', dpi=500, 
+       height = 5, width = 5, unit = 'in')
+
+VlnPlot(merge.obj, features = c("nCount_Spatial"), group.by = "orig.ident",pt.size = 0)+
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.nCount.tiff', device='tiff', dpi=500, 
+       height = 5, width = 5, unit = 'in')
+
+
+
+rep.images <- unique(merge.obj$orig.ident)
+
+midit <- theme(plot.title = element_text(size=12,hjust=0.5),legend.position = "none")
+SpatialColors <- colorRampPalette(colors = rev(x = brewer.pal(n = 11, name = "Spectral")))
+fix.sc <- scale_fill_gradientn(limits = c(0,12000), breaks = c(0,3000,6000,12000),colors = SpatialColors(n = 100))
+
+# SpatialFeaturePlot(merge.obj, features = c("percent.mt"), ncol = 4) #8*4
+SpatialFeaturePlot(merge.obj, features = c("nFeature_Spatial"), ncol = 2,min.cutoff = 0, max.cutoff = 12000)
+SpatialFeaturePlot(merge.obj, features = c("nCount_Spatial"), ncol = 2) # 10*4
+
+
+midit <- theme(plot.title = element_text(size=12,hjust=0.5),legend.position = "top")
+SpatialColors <- colorRampPalette(colors = rev(x = brewer.pal(n = 11, name = "Spectral")))
+fix.sc <- scale_fill_gradientn(limits = c(0,12000), breaks = c(0,4000,9000,12000),colors = SpatialColors(n = 100))
+
+SpatialFeaturePlot(merge.obj, features = "nFeature_Spatial", images = rep.images[1]) + fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialHtmap.nFeature.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialFeaturePlot(merge.obj, features = "nFeature_Spatial", images = rep.images[2]) + fix.sc + midit + ggtitle(rep.images[2])
+ggsave(paste("./High_resolution/SpatialHtmap.nFeature.",rep.images[2],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialFeaturePlot(merge.obj, features = "nFeature_Spatial", images = rep.images[3]) + fix.sc + midit + ggtitle(rep.images[3])
+ggsave(paste("./High_resolution/SpatialHtmap.nFeature.",rep.images[3],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialFeaturePlot(merge.obj, features = "nFeature_Spatial", images = rep.images[4]) + fix.sc + midit + ggtitle(rep.images[4])
+ggsave(paste("./High_resolution/SpatialHtmap.nFeature.",rep.images[4],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+
+
+
+
+fix.sc <- scale_fill_gradientn(limits = c(0,80000), breaks = c(0,40000,80000),colors = SpatialColors(n = 100))
+
+SpatialFeaturePlot(merge.obj, features = "nCount_Spatial", images = rep.images[1]) + fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialHtmap.nCount.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialFeaturePlot(merge.obj, features = "nCount_Spatial", images = rep.images[2]) + fix.sc + midit + ggtitle(rep.images[2])
+ggsave(paste("./High_resolution/SpatialHtmap.nCount.",rep.images[2],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialFeaturePlot(merge.obj, features = "nCount_Spatial", images = rep.images[3]) + fix.sc + midit + ggtitle(rep.images[3])
+ggsave(paste("./High_resolution/SpatialHtmap.nCount.",rep.images[3],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialFeaturePlot(merge.obj, features = "nCount_Spatial", images = rep.images[4]) + fix.sc + midit + ggtitle(rep.images[4])
+ggsave(paste("./High_resolution/SpatialHtmap.nCount.",rep.images[4],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+
+
+SpatialDimPlot(merge.obj, group.by = "anatomy", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+SpatialDimPlot(merge.obj, group.by = "anatomy", images = rep.images[2],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.",rep.images[2],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+SpatialDimPlot(merge.obj, group.by = "anatomy", images = rep.images[3],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.",rep.images[3],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+SpatialDimPlot(merge.obj, group.by = "anatomy", images = rep.images[4],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.",rep.images[4],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+
+
+
+
+
+
+
+
+
+VlnPlot(merge.obj, features = c("B2m"), group.by = "orig.ident",pt.size = 0,slot = "counts") +
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.B2m.before.tiff', device='tiff', dpi=500, height = 5, width = 5, unit = 'in')
+
+VlnPlot(merge.obj, features = c("B2m"), group.by = "orig.ident",pt.size = 0) +
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.B2m.after.tiff', device='tiff', dpi=500, height = 5, width = 5, unit = 'in')
+
+VlnPlot(merge.obj, features = c("Actb"), group.by = "orig.ident",pt.size = 0,slot = "counts") +
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.Actb.before.tiff', device='tiff', dpi=500, height = 5, width = 5, unit = 'in')
+
+VlnPlot(merge.obj, features = c("Actb"), group.by = "orig.ident",pt.size = 0) +
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.Actb.after.tiff', device='tiff', dpi=500, height = 5, width = 5, unit = 'in')
+
+VlnPlot(merge.obj, features = c("Top1"), group.by = "orig.ident",pt.size = 0,slot = "counts") + #5*5 
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.Top1.before.tiff', device='tiff', dpi=500, height = 5, width = 5, unit = 'in')
+
+VlnPlot(merge.obj, features = c("Top1"), group.by = "orig.ident",pt.size = 0) + #5*5 
+  scale_fill_manual(values = color_palette) #5*5
+ggsave('./High_resolution/Vln.Top1.after.tiff', device='tiff', dpi=500, height = 5, width = 5, unit = 'in')
+
+
+
+median(merge.obj$nFeature_Spatial[merge.obj$orig.ident == "mf_p21_rep1"])
+median(merge.obj$nFeature_Spatial[merge.obj$orig.ident == "mf_p21_rep2"])
+median(merge.obj$nFeature_Spatial[merge.obj$orig.ident == "hf_p21_rep1"])
+median(merge.obj$nFeature_Spatial[merge.obj$orig.ident == "hf_p21_rep2"])
+
+median(merge.obj$nCount_Spatial[merge.obj$orig.ident == "mf_p21_rep1"])
+median(merge.obj$nCount_Spatial[merge.obj$orig.ident == "mf_p21_rep2"])
+median(merge.obj$nCount_Spatial[merge.obj$orig.ident == "hf_p21_rep1"])
+median(merge.obj$nCount_Spatial[merge.obj$orig.ident == "hf_p21_rep2"])
+
+
+sum(hf_p21_rep2$nCount_Spatial)
+mean(hf_p21_rep2$nCount_Spatial)
+median(hf_p21_rep2$nCount_Spatial)
+```
+
+
+# Clustering
+```{r}
+SpatialDimPlot(merge.obj, group.by = "Spatial_snn_res.0.05", ncol = 4, pt.size.factor = 1.5,label = F) # 12*6
+SpatialDimPlot(merge.obj, group.by = "Spatial_snn_res.0.1",ncol = 4, pt.size.factor = 1.5, label = F)
+SpatialDimPlot(merge.obj, group.by = "Spatial_snn_res.0.3",ncol = 4, pt.size.factor = 1.5, label = F)
+
+
+table(merge.obj$Spatial_snn_res.0.1,merge.obj$Spatial_snn_res.0.3)
+
+write.csv(table(merge.obj$Spatial_snn_res.0.1,merge.obj$Spatial_snn_res.0.3),
+          file = "table.res0.1_res0.3.csv")
+```
+
+# Top heatmap
+```{r}
+
+merge.obj$anatomy <- as.character(merge.obj$anatomy)
+
+merge.obj$anatomy <- factor(merge.obj$anatomy, levels = c("0","1","2","hippocampus","4","5"))
+
+
+
+merge.obj.marker <- FindAllMarkers(merge.obj, only.pos = TRUE, min.pct = 0.5, logfc.threshold = 0.25)
+
+merge.obj.marker %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+
+top10 <- top10[c(1:30,51:60,31:50),]
+
+DoHeatmap(merge.obj, features = top10$gene,group.by = "anatomy")+
+  scale_fill_gradientn(colors = c("blue", "white", "red"))# + theme(axis.text.y = element_blank())
+
+
+ggsave('./High_resolution/Htmap.ClusterTop10Marker.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+merge.obj.marker %>%
+    group_by(cluster) %>%
+    top_n(n = 3, wt = avg_log2FC) -> top3
+
+top3 <- top3[c(1:9,16:18,10:15),]
+
+
+DoHeatmap(merge.obj, features = top3$gene,group.by = "anatomy")+
+  scale_fill_gradientn(colors = c("blue", "white", "red"))
+
+ggsave('./High_resolution/Htmap.ClusterTop3Marker.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+```
+
+
+
+# FindMarker
+```{r}
+merge.obj <- merge.obj %>% 
+  AddMetaData(metadata = ifelse(startsWith(as.character(merge.obj$orig.ident), "hf"), "hf", "mf"), col.name = "FA")
+
+
+SpatialDimPlot(merge.obj,pt.size.factor = 1.8,ncol = 2, group.by = "anatomy")
+
+ggsave('./High_resolution/Htmap.anatomy.tiff', device='tiff', dpi=500, 
+       height = 10, width = 10, unit = 'in')
+
+DimPlot(merge.obj,pt.size = 1, group.by = "anatomy")
+
+ggsave('./High_resolution/UMAP.anatomy.tiff', device='tiff', dpi=500, 
+       height = 8, width = 9, unit = 'in')
+
+Idents(merge.obj) <- merge.obj$anatomy
+
+for (i in unique(merge.obj$anatomy)){
+  assign(paste("cluster",i,"HF_vs_MF.DEG",sep = "."),
+         FindMarkers(merge.obj, ident.1 = "hf",ident.2 = "mf", group.by = 'FA', subset.ident = i,
+                     logfc.threshold = 0, pseudocount.use = 0))
+  
+  write.csv(get(paste("cluster",i,"HF_vs_MF.DEG",sep = ".")), file = paste("cluster",i,"HF_vs_MF.DEG.csv",sep = "."))
+}``
+```
+
+
+
+
+
+
+```{r}
+# List all variables in the environment
+all_vars <- ls()
+
+# Find variables starting with "cluster." and containing "HF_vs_MF.DEG"
+matching_vars <- grep("^cluster\\..*HF_vs_MF\\.DEG", all_vars, value = TRUE)
+
+matching_vars <- c("cluster.0.HF_vs_MF.DEG","cluster.1.HF_vs_MF.DEG","cluster.2.HF_vs_MF.DEG",
+                   "cluster.hippocampus.HF_vs_MF.DEG","cluster.4.HF_vs_MF.DEG","cluster.5.HF_vs_MF.DEG")
+
+upregulated_counts <- numeric(6)
+downregulated_counts <- numeric(6)
+
+for (cluster in matching_vars) {
+  deg_list <- get(cluster)
+  i <- match(cluster,matching_vars)
+  # Filter by adjusted p-value and log fold change
+  deg_list_filtered <- deg_list %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+  
+  # Count the number of upregulated and downregulated genes
+  upregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC > 0)
+  downregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC < 0)
+}
+
+downregulated_counts <- -downregulated_counts
+# Create a dataframe for plotting
+deg_counts <- data.frame(
+  cluster = factor(rep(matching_vars, 2), levels = c("cluster.0.HF_vs_MF.DEG","cluster.1.HF_vs_MF.DEG","cluster.2.HF_vs_MF.DEG",
+                                                     "cluster.hippocampus.HF_vs_MF.DEG","cluster.4.HF_vs_MF.DEG","cluster.5.HF_vs_MF.DEG")),
+  direction = factor(rep(c("Upregulated", "Downregulated"), each = 6)),
+  count = c(upregulated_counts, downregulated_counts)
+)
+
+# Create the barplot
+
+ggplot(deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  # geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_text(angle = 45, hjust = 1,size = 0), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+
+
+ggplot(deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+
+DimPlot(merge.obj, group.by = "anatomy")
+SpatialDimPlot(merge.obj, group.by = "anatomy", images = "hf_p21_rep1")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+save.image(file = "temp.Rdata")
+```
+
+
+
+```{r}
+for (cluster in matching_vars) {
+  deg <- get(cluster)
+  deg <- deg %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+  eg  <-  bitr(rownames(deg), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+  ego <- enrichGO(gene          = eg$ENTREZID,
+                  OrgDb         = org.Mm.eg.db,
+                  ont           = "BP",
+                  pAdjustMethod = "BH",
+                  pvalueCutoff  = 0.05,
+                  qvalueCutoff = 0.05,
+                  readable      = TRUE)
+  # write.csv(ego@result, file = paste(cluster,"1.2FC.GO.BP.csv", sep = ""))
+}
+```
+# Upset plot
+
+
+
+
+```{r}
+cluster.0.HF_vs_MF.filter.DEG <- cluster.0.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.1.HF_vs_MF.filter.DEG <- cluster.1.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.2.HF_vs_MF.filter.DEG <- cluster.2.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.hippocampus.HF_vs_MF.filter.DEG <- cluster.hippocampus.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.4.HF_vs_MF.filter.DEG <- cluster.4.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.5.HF_vs_MF.filter.DEG <- cluster.5.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+```
+
+
+```{r}
+
+general.anatomy.ref.DEG <- unique(c(rownames(cluster.0.HF_vs_MF.filter.DEG),
+                                  rownames(cluster.1.HF_vs_MF.filter.DEG),
+                                  rownames(cluster.2.HF_vs_MF.filter.DEG),
+                                  rownames(cluster.hippocampus.HF_vs_MF.filter.DEG),
+                                  rownames(cluster.4.HF_vs_MF.filter.DEG),
+                                  rownames(cluster.5.HF_vs_MF.filter.DEG)))
+
+general.anatomy.ref.DEG.down <- unique(c(rownames(cluster.0.HF_vs_MF.filter.DEG[cluster.0.HF_vs_MF.filter.DEG$avg_log2FC < 0,]),
+                                  rownames(cluster.1.HF_vs_MF.filter.DEG[cluster.1.HF_vs_MF.filter.DEG$avg_log2FC < 0,]),
+                                  rownames(cluster.2.HF_vs_MF.filter.DEG[cluster.2.HF_vs_MF.filter.DEG$avg_log2FC < 0,]),
+                                  rownames(cluster.hippocampus.HF_vs_MF.filter.DEG[cluster.hippocampus.HF_vs_MF.filter.DEG$avg_log2FC < 0,]),
+                                  rownames(cluster.4.HF_vs_MF.filter.DEG[cluster.4.HF_vs_MF.filter.DEG$avg_log2FC < 0,]),
+                                  rownames(cluster.5.HF_vs_MF.filter.DEG[cluster.5.HF_vs_MF.filter.DEG$avg_log2FC < 0,])))
+length(general.anatomy.ref.DEG.down)
+
+general.anatomy.ref.DEG.up <- unique(c(rownames(cluster.0.HF_vs_MF.filter.DEG[cluster.0.HF_vs_MF.filter.DEG$avg_log2FC > 0,]),
+                                  rownames(cluster.1.HF_vs_MF.filter.DEG[cluster.1.HF_vs_MF.filter.DEG$avg_log2FC > 0,]),
+                                  rownames(cluster.2.HF_vs_MF.filter.DEG[cluster.2.HF_vs_MF.filter.DEG$avg_log2FC > 0,]),
+                                  rownames(cluster.hippocampus.HF_vs_MF.filter.DEG[cluster.hippocampus.HF_vs_MF.filter.DEG$avg_log2FC > 0,]),
+                                  rownames(cluster.4.HF_vs_MF.filter.DEG[cluster.4.HF_vs_MF.filter.DEG$avg_log2FC > 0,]),
+                                  rownames(cluster.5.HF_vs_MF.filter.DEG[cluster.5.HF_vs_MF.filter.DEG$avg_log2FC > 0,])))
+length(general.anatomy.ref.DEG.up)
+
+
+deg.number <- list("cluster0" = rownames(cluster.0.HF_vs_MF.filter.DEG),
+                   "cluster1" = rownames(cluster.1.HF_vs_MF.filter.DEG),
+                   "cluster2" = rownames(cluster.2.HF_vs_MF.filter.DEG),
+                   "cluster3" = rownames(cluster.hippocampus.HF_vs_MF.filter.DEG),
+                   "cluster4" = rownames(cluster.4.HF_vs_MF.filter.DEG),
+                   "cluster5" = rownames(cluster.5.HF_vs_MF.filter.DEG))
+
+
+m <- make_comb_mat(deg.number)
+
+UpSet(m)
+
+
+general.anatomy.DEG <- data.frame(cluster_0 = general.anatomy.ref.DEG %in% rownames(cluster.0.HF_vs_MF.filter.DEG),
+                                  cluster_1 = general.anatomy.ref.DEG %in% rownames(cluster.1.HF_vs_MF.filter.DEG),
+                                  cluster_2 = general.anatomy.ref.DEG %in%  rownames(cluster.2.HF_vs_MF.filter.DEG),
+                                  cluster_hippo = general.anatomy.ref.DEG %in%  rownames(cluster.hippocampus.HF_vs_MF.filter.DEG),
+                                  cluster_4 = general.anatomy.ref.DEG %in%  rownames(cluster.4.HF_vs_MF.filter.DEG),
+                                  cluster_5 = general.anatomy.ref.DEG %in%  rownames(cluster.5.HF_vs_MF.filter.DEG))
+
+rownames(general.anatomy.DEG) <- general.anatomy.ref.DEG
+
+genre <- rev(colnames(general.anatomy.DEG))
+
+# genre <- colnames(general.anatomy.DEG)
+
+upset(general.anatomy.DEG, genre,
+                        name='Comparisons', width_ratio=0.2, sort_sets=FALSE,
+                        base_annotations=list(
+                          'Intersection size'=intersection_size(text=list(size = 4),
+                                                                counts=T,
+                                                                mapping=aes(fill='bars_color'))+
+                            scale_fill_manual(values=c('bars_color'='black'))),
+                        queries=list(
+                          upset_query(set='cluster_0', fill='red'),
+                          upset_query(set='cluster_1', fill='red'),
+                          upset_query(set='cluster_2', fill='red'),
+                          upset_query(set='cluster_hippo', fill='red'),
+                          upset_query(set='cluster_4', fill='red'),
+                          upset_query(set='cluster_5', fill='red')),
+                        set_sizes=(
+                          upset_set_size()
+                          + geom_text(aes(label=..count..), hjust=1.1, stat='count')
+                          + expand_limits(y=1200)
+                          + theme(axis.text.x=element_text(angle=90,size = 15)))) +
+                    theme(text = element_text(size = 20,color = "black")) # 1500*800
+
+ggsave('./High_resolution/Upset.number.general.anatomy.tiff', device='tiff', dpi=500, 
+       height = 8, width = 15, unit = 'in')
+
+tiff('./High_resolution/test.tiff', units="in", width=15, height=8, res=500)
+
+upset(general.anatomy.DEG, genre,
+      name='Comparisons', width_ratio=0.2, sort_sets=FALSE,
+      base_annotations=list('Intersection size'=intersection_size(text=list(size = 0),
+                                                                  counts=T,
+                                                                  mapping=aes(fill='bars_color'))+
+                              scale_fill_manual(values=c('bars_color'='black'))+
+                              theme(panel.grid.major = element_blank()
+                              )),
+      queries=list(upset_query(set='cluster_0', fill='black'),
+                   upset_query(set='cluster_1', fill='black'),
+                   upset_query(set='cluster_2', fill='black'),
+                   upset_query(set='cluster_hippo', fill='black'),
+                   upset_query(set='cluster_4', fill='black'),
+                   upset_query(set='cluster_5', fill='black')),
+      set_sizes=(upset_set_size() +
+                 expand_limits(y=1200) +
+                 theme(axis.text.x=element_text(angle=90,size = 0),
+                          panel.grid.minor = element_blank()))) +
+  theme(text = element_text(size = 20,color = "black"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) # 1500*800
+dev.off()
+
+ggsave('./High_resolution/Upset.nonumber.general.anatomy.tiff', device='tiff', dpi=500, 
+       height = 8, width = 15, unit = 'in')
+
+
+```
+
+
+
+# GO Upset
+```{r}
+cluster.0.HF_vs_MF.filter.DEG.entrez <- bitr(rownames(cluster.0.HF_vs_MF.filter.DEG), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+cluster.1.HF_vs_MF.filter.DEG.entrez <- bitr(rownames(cluster.1.HF_vs_MF.filter.DEG), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+cluster.2.HF_vs_MF.filter.DEG.entrez <- bitr(rownames(cluster.2.HF_vs_MF.filter.DEG), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+cluster.hippocampus.HF_vs_MF.filter.DEG.entrez <- bitr(rownames(cluster.hippocampus.HF_vs_MF.filter.DEG), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+cluster.4.HF_vs_MF.filter.DEG.entrez <- bitr(rownames(cluster.4.HF_vs_MF.filter.DEG), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+cluster.5.HF_vs_MF.filter.DEG.entrez <- bitr(rownames(cluster.5.HF_vs_MF.filter.DEG), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+
+
+
+GO.compare <- list(cluster_0 = cluster.0.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                    cluster_1 = cluster.1.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                    cluster_2 = cluster.2.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                    cluster_hippo = cluster.hippocampus.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                    cluster_4 = cluster.4.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                    cluster_5 = cluster.5.HF_vs_MF.filter.DEG.entrez$ENTREZID)
+
+
+ck <- compareCluster(geneCluster = GO.compare, fun = enrichGO,OrgDb="org.Mm.eg.db", ont = "BP")
+ck <- setReadable(ck, OrgDb = org.Mm.eg.db, keyType="ENTREZID")
+
+
+ck <- pairwise_termsim(ck)
+ck1 <- simplify(ck)
+ck2 <- simplify(ck, by = "Count", select_fun = max)
+
+ck.result <- ck@compareClusterResult
+```
+
+
+
+```{r}
+dotplot(ck1,showCategory = 3,by = "count")
+ggsave('./High_resolution/Dotplot.GOBP.padj.general.anatomy.tiff', device='tiff', dpi=500, 
+       height = 10, width = 10, unit = 'in')
+
+dotplot(ck2,showCategory = 3,by = "count")
+
+
+p <-  dotplot(ck2,showCategory = 3,by = "count")
+
+p.data <- p$data
+p.data <- p.data[!p.data$Description %in% c("ensheathment of neurons","regulation of neurotransmitter transport","regulation of neurotransmitter levels"),]
+p$data <- p.data
+
+p + geom_point(aes_string(colour = "p.adjust") ) +
+    scale_fill_gradient(low="red", high="blue",
+                           limits = c(0, 0.05))  +
+    labs(size="Count", colour="p.adjust") +
+  theme(panel.grid.minor = element_blank()) #panel.grid.major = element_blank())
+
+
+ggsave('./High_resolution/Dotplot.GO.Count.1:2.5.general.anatomy.tiff', device='tiff', dpi=500, 
+       height = 6, width = 15, unit = 'in') # change to 1:2, 1:2.5
+
+cnetplot(ck, showCategory = 3) +
+    theme(panel.background = element_rect(fill = "white")) # Change background to white)
+
+ggsave('./High_resolution/cnetplot.GO.general.anatomy.tiff', device='tiff', dpi=500, 
+       height = 12, width = 12, unit = 'in')
+```
+
+
+
+```{r}
+gene_list <- c("Satb2", "Dlk1", "Abhd12b","Cabp7","Meis2","Pou4f1")  # replace with your actual gene names
+
+
+ggplot2::scale_fill_discrete()$palette(6)
+
+
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,4,8),colors = c("white","#F8766D"))
+p.Satb2 <- SpatialFeaturePlot(merge.obj, features = "Satb2", images = rep.images[1])+ fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialFeature.Satb2",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,4,8),colors = c("white","#B79F00"))
+p.Dlk1 <- SpatialFeaturePlot(merge.obj, features = "Dlk1", images = rep.images[1])+ fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialFeature.Dlk1",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,4,8),colors = c("white","#00BA38"))
+p.Abhd12b <- SpatialFeaturePlot(merge.obj, features = "Abhd12b", images = rep.images[1])+ fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialFeature.Abhd12b",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,4,8),colors = c("white","#00BFC4"))
+p.Cabp7 <- SpatialFeaturePlot(merge.obj, features = "Cabp7", images = rep.images[1])+ fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialFeature.Cabp7",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,4,8),colors = c("white","#619CFF"))
+p.Meis2 <- SpatialFeaturePlot(merge.obj, features = "Meis2", images = rep.images[1])+ fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialFeature.Meis2",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+fix.sc <- scale_fill_gradientn(limits = c(0,8), breaks = c(0,4,8),colors = c("white","#F564E3"))
+p.Pou4f1 <- SpatialFeaturePlot(merge.obj, features = "Pou4f1", images = rep.images[1])+ fix.sc + midit + ggtitle(rep.images[1]) #1000*800
+ggsave(paste("./High_resolution/SpatialFeature.Pou4f1",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+
+```
+
+
+```{r}
+gene_list.df <- FetchData(merge.obj,vars = gene_list)
+```
+
+
+
+
+
+
+
+
+
+
+# Hippocampus
+```{r}
+merge.obj <- FindSubCluster(  merge.obj, "hippocampus",subcluster.name = "hippocampus.cluster.0.1","Spatial_snn",
+  resolution = 0.1)
+merge.obj <- FindSubCluster(  merge.obj, "hippocampus",subcluster.name = "hippocampus.cluster.0.3","Spatial_snn",
+  resolution = 0.3)
+merge.obj <- FindSubCluster(  merge.obj, "hippocampus",subcluster.name = "hippocampus.cluster.0.5","Spatial_snn",
+  resolution = 0.5)
+
+SpatialDimPlot(merge.obj, group.by = "hippocampus.cluster.0.1", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.hippocampus.cluster.0.1.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+DimPlot(merge.obj, group.by = "hippocampus.cluster.0.1")
+
+SpatialDimPlot(merge.obj, group.by = "hippocampus.cluster.0.3", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.hippocampus.cluster.0.3.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialDimPlot(merge.obj, group.by = "hippocampus.cluster.0.5", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.hippocampus.cluster.0.5.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+```
+
+
+```{r}
+
+Idents(merge.obj) <- "hippocampus.cluster.0.1"
+
+for(i in c("hippocampus_0","hippocampus_1","hippocampus_2","hippocampus_3")){
+  assign(paste("cluster",i,"HF_vs_MF.DEG",sep = "."),
+         FindMarkers(merge.obj, ident.1 = "hf",ident.2 = "mf", group.by = 'FA', subset.ident = i,
+                     logfc.threshold = 0, pseudocount.use = 0))
+  write.csv(get(paste("cluster",i,"HF_vs_MF.DEG",sep = ".")), file = paste("cluster",i,"HF_vs_MF.DEG.csv",sep = "."))
+  }
+```
+
+
+
+```{r}
+# List all variables in the environment
+all_vars <- ls()
+
+# Find variables starting with "cluster." and containing "HF_vs_MF.DEG"
+hippo.matching_vars <- grep("^cluster\\.hippocampus_\\d+\\.HF_vs_MF\\.DEG", all_vars, value = TRUE)
+
+
+hippo.upregulated_counts <- numeric(4)
+hippo.downregulated_counts <- numeric(4)
+
+for (cluster in hippo.matching_vars) {
+  deg_list <- get(cluster)
+  i <- match(cluster,hippo.matching_vars)
+  # Filter by adjusted p-value and log fold change
+  deg_list_filtered <- deg_list %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2)) #pct.1 > 0.1, pct.2 > 0.1
+  
+  # Count the number of upregulated and downregulated genes
+  hippo.upregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC > 0)
+  hippo.downregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC < 0)
+}
+
+hippo.downregulated_counts <- -hippo.downregulated_counts
+
+# Create a dataframe for plotting
+hippo.deg_counts <- data.frame(
+  cluster = factor(rep(hippo.matching_vars, 2), levels = c(hippo.matching_vars)),
+  direction = factor(rep(c("Upregulated", "Downregulated"), each = 4)),
+  count = c(hippo.upregulated_counts, hippo.downregulated_counts)
+)
+
+# Create the barplot
+
+ggplot(hippo.deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  # geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(hippo.deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_blank(), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave('./High_resolution/barplt.hippocampus.nonumber.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+
+ggplot(hippo.deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(hippo.deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave('./High_resolution/barplt.hippocampus.withnumber.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+```{r}
+cluster.hippocampus_0.HF_vs_MF.filter.DEG <- cluster.hippocampus_0.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.hippocampus_1.HF_vs_MF.filter.DEG <- cluster.hippocampus_1.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.hippocampus_2.HF_vs_MF.filter.DEG <- cluster.hippocampus_2.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.hippocampus_3.HF_vs_MF.filter.DEG <- cluster.hippocampus_3.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+```
+
+
+```{r}
+
+hippo.ref.DEG <- unique(c(rownames(cluster.hippocampus_0.HF_vs_MF.filter.DEG),
+                          rownames(cluster.hippocampus_1.HF_vs_MF.filter.DEG),
+                          rownames(cluster.hippocampus_2.HF_vs_MF.filter.DEG),
+                          rownames(cluster.hippocampus_3.HF_vs_MF.filter.DEG)))
+
+
+hippo.DEG <- data.frame(hippocampus_0 = hippo.ref.DEG %in% rownames(cluster.hippocampus_0.HF_vs_MF.filter.DEG),
+                        hippocampus_1 = hippo.ref.DEG %in% rownames(cluster.hippocampus_1.HF_vs_MF.filter.DEG),
+                        hippocampus_2 = hippo.ref.DEG %in% rownames(cluster.hippocampus_2.HF_vs_MF.filter.DEG),
+                        hippocampus_3 = hippo.ref.DEG %in% rownames(cluster.hippocampus_3.HF_vs_MF.filter.DEG))
+
+rownames(hippo.DEG) <- hippo.ref.DEG
+
+hippo.genre <- rev(colnames(hippo.DEG))
+
+# genre <- colnames(general.anatomy.DEG)
+
+upset(hippo.DEG, hippo.genre,
+                        name='Comparisons', width_ratio=0.2, sort_sets=FALSE,
+                        base_annotations=list(
+                          'Intersection size'=intersection_size(text=list(size = 4),
+                                                                counts=T,
+                                                                mapping=aes(fill='bars_color'))+
+                            scale_fill_manual(values=c('bars_color'='black'))),
+                        queries=list(
+                          upset_query(set='hippocampus_0', fill='red'),
+                          upset_query(set='hippocampus_1', fill='red'),
+                          upset_query(set='hippocampus_2', fill='red'),
+                          upset_query(set='hippocampus_3', fill='red')),
+                        set_sizes=(
+                          upset_set_size()
+                          + geom_text(aes(label=..count..), hjust=1.1, stat='count')
+                          + expand_limits(y=1200)
+                          + theme(axis.text.x=element_text(angle=90,size = 15),
+                                  panel.grid.minor = element_blank()))) +
+                    theme(text = element_text(size = 20,color = "black"),
+                          panel.grid.minor = element_blank(),
+                          panel.grid.major = element_blank()) # 1500*800
+
+ggsave('./High_resolution/Upset.hippo.tiff', device='tiff', dpi=500, 
+       height = 8, width = 10, unit = 'in')
+```
+
+
+
+
+```{r}
+merge.obj <- FindSubCluster(  merge.obj, "0",subcluster.name = "cortex.cluster.0.1","Spatial_snn",
+  resolution = 0.1)
+
+Idents(merge.obj) <- merge.obj$hippocampus.cluster.0.1
+merge.obj <- FindSubCluster(  merge.obj, "0",subcluster.name = "cortex.cluster.0.3","Spatial_snn",
+  resolution = 0.3)
+SpatialDimPlot(merge.obj, group.by = "cortex.cluster.0.2", ncol = 2)
+
+Idents(merge.obj) <- merge.obj$anatomy
+merge.obj <- FindSubCluster(  merge.obj, "0",subcluster.name = "cortex.cluster.0.15","Spatial_snn",
+  resolution = 0.15)
+SpatialDimPlot(merge.obj, group.by = "cortex.cluster.0.15", ncol = 2)
+
+ggsave(paste("./High_resolution/SpatialDmplot.cortex.cluster.0.15.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+merge.obj <- FindSubCluster(  merge.obj, "0",subcluster.name = "cortex.cluster.0.3","Spatial_snn",
+  resolution = 0.3)
+merge.obj <- FindSubCluster(  merge.obj, "0",subcluster.name = "cortex.cluster.0.5","Spatial_snn",
+  resolution = 0.5)
+
+SpatialDimPlot(merge.obj, group.by = "cortex.cluster.0.1", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.cortex.cluster.0.1.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialDimPlot(merge.obj, group.by = "cortex.cluster.0.3", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.cortex.cluster.0.3.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+SpatialDimPlot(merge.obj, group.by = "cortex.cluster.0.5", images = rep.images[1],label = F)
+ggsave(paste("./High_resolution/SpatialDmplot.cortex.cluster.0.5.",rep.images[1],".tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+```
+
+```{r}
+Idents(merge.obj) <- merge.obj$hippocampus.cluster.0.1
+merge.obj <- FindSubCluster(merge.obj, "0",subcluster.name = "previous.complete","Spatial_snn",
+  resolution = 0.3)
+SpatialDimPlot(merge.obj, group.by = "previous.complete", ncol = 2)
+
+ggsave(paste("./High_resolution/SpatialDmplot.previous.complete.tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+
+DimPlot(merge.obj, group.by = "previous.complete")
+ggsave(paste("./High_resolution/Dimplot.previous.complete.tiff", sep = ""), device='tiff', dpi=500, height = 8, width = 10, unit = 'in')
+```
+
+
+
+```{r}
+Idents(merge.obj) <- "cortex.cluster.0.3"
+
+for(i in c("0_0","0_1","0_2","0_3","0_4","0_5")){
+  assign(paste("cluster",i,"HF_vs_MF.DEG",sep = "."),
+         FindMarkers(merge.obj, ident.1 = "hf",ident.2 = "mf", group.by = 'FA', subset.ident = i,
+                     logfc.threshold = 0, pseudocount.use = 0))
+  write.csv(get(paste("cluster",i,"HF_vs_MF.DEG",sep = ".")), file = paste("cluster",i,"HF_vs_MF.DEG.csv",sep = "."))
+  }
+```
+
+
+
+
+```{r}
+# List all variables in the environment
+all_vars <- ls()
+
+# Find variables starting with "cluster." and containing "HF_vs_MF.DEG"
+cortex.matching_vars <- grep("^cluster\\.0_\\d+\\.HF_vs_MF\\.DEG", all_vars, value = TRUE)
+
+
+cortex.upregulated_counts <- numeric(6)
+cortex.downregulated_counts <- numeric(6)
+
+for (cluster in cortex.matching_vars) {
+  deg_list <- get(cluster)
+  i <- match(cluster,cortex.matching_vars)
+  # Filter by adjusted p-value and log fold change
+  deg_list_filtered <- deg_list %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+  
+  # Count the number of upregulated and downregulated genes
+  cortex.upregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC > 0)
+  cortex.downregulated_counts[i] <- sum(deg_list_filtered$avg_log2FC < 0)
+}
+
+cortex.downregulated_counts <- -cortex.downregulated_counts
+
+# Create a dataframe for plotting
+cortex.deg_counts <- data.frame(
+  cluster = factor(rep(cortex.matching_vars, 2), levels = c(cortex.matching_vars)),
+  direction = factor(rep(c("Upregulated", "Downregulated"), each = 6)),
+  count = c(cortex.upregulated_counts, cortex.downregulated_counts)
+)
+
+# Create the barplot
+
+ggplot(cortex.deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  # geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(cortex.deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_blank(), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave('./High_resolution/barplt.cortex.nonumber.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+ggplot(cortex.deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(count)), position=position_dodge(width=0), hjust= ifelse(cortex.deg_counts$direction == 'Upregulated', 0.5, 0.5), size=5) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))+
+  theme(
+    axis.text=element_text(size=20),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave('./High_resolution/barplt.cortex.withnumber.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+```{r}
+cluster.cortex_0.HF_vs_MF.filter.DEG <- cluster.0_0.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_1.HF_vs_MF.filter.DEG <- cluster.0_1.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_2.HF_vs_MF.filter.DEG <- cluster.0_2.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_3.HF_vs_MF.filter.DEG <- cluster.0_3.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_4.HF_vs_MF.filter.DEG <- cluster.0_4.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+cluster.cortex_5.HF_vs_MF.filter.DEG <- cluster.0_5.HF_vs_MF.DEG %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+```
+
+
+
+```{r}
+cortex.ref.DEG <- unique(c(rownames(cluster.cortex_0.HF_vs_MF.filter.DEG),
+                          rownames(cluster.cortex_1.HF_vs_MF.filter.DEG),
+                          rownames(cluster.cortex_2.HF_vs_MF.filter.DEG),
+                          rownames(cluster.cortex_3.HF_vs_MF.filter.DEG),
+                          rownames(cluster.cortex_4.HF_vs_MF.filter.DEG),
+                          rownames(cluster.cortex_5.HF_vs_MF.filter.DEG)))
+
+
+cortex.DEG <- data.frame(cortex_0 = cortex.ref.DEG %in% rownames(cluster.cortex_0.HF_vs_MF.filter.DEG),
+                          cortex_1 = cortex.ref.DEG %in% rownames(cluster.cortex_1.HF_vs_MF.filter.DEG),
+                          cortex_2 = cortex.ref.DEG %in% rownames(cluster.cortex_2.HF_vs_MF.filter.DEG),
+                          cortex_3 = cortex.ref.DEG %in% rownames(cluster.cortex_3.HF_vs_MF.filter.DEG),
+                          cortex_4 = cortex.ref.DEG %in% rownames(cluster.cortex_4.HF_vs_MF.filter.DEG),
+                          cortex_5 = cortex.ref.DEG %in% rownames(cluster.cortex_5.HF_vs_MF.filter.DEG))
+
+
+
+rownames(cortex.DEG) <- cortex.ref.DEG
+
+cortex.genre <- rev(colnames(cortex.DEG))
+
+# genre <- colnames(general.anatomy.DEG)
+
+upset(cortex.DEG, cortex.genre,
+                        name='Comparisons', width_ratio=0.2, sort_sets=FALSE,
+                        base_annotations=list(
+                          'Intersection size'=intersection_size(text=list(size = 4),
+                                                                counts=T,
+                                                                mapping=aes(fill='bars_color'))+
+                            scale_fill_manual(values=c('bars_color'='black'))),
+                        queries=list(
+                          upset_query(set='cortex_0', fill='red'),
+                          upset_query(set='cortex_1', fill='red'),
+                          upset_query(set='cortex_2', fill='red'),
+                          upset_query(set='cortex_3', fill='red'),
+                          upset_query(set='cortex_4', fill='red'),
+                          upset_query(set='cortex_5', fill='red')),
+                        set_sizes=(
+                          upset_set_size()
+                          + geom_text(aes(label=..count..), hjust=1.1, stat='count')
+                          + expand_limits(y=1200)
+                          + theme(axis.text.x=element_text(angle=90,size = 15)))) +
+                    theme(text = element_text(size = 20,color = "black")) # 1500*800
+
+ggsave('./High_resolution/Upset.cortex.tiff', device='tiff', dpi=500, 
+       height = 8, width = 10, unit = 'in')
+```
+
+```{r}
+save.image("temp2.Rdata")
+```
+
+```{r}
+table(merge.obj$orig.ident,merge.obj$hippocampus.cluster.0.1)
+
+write.csv(table(merge.obj$orig.ident,merge.obj$hippocampus.cluster.0.1), file = "hippo.subcluster.number.csv")
+
+table(merge.obj$orig.ident,merge.obj$cortex.cluster.0.3)
+
+write.csv(table(merge.obj$orig.ident,merge.obj$cortex.cluster.0.3), file = "cortex.subcluster.number.csv")
+```
+
+
+# Transformed volano plot
+```{r}
+# Cortex
+cluster.0.HF_vs_MF.DEG$gene <- rownames(cluster.0.HF_vs_MF.DEG)
+cluster.0.HF_vs_MF.DEG$condition <- ifelse(cluster.0.HF_vs_MF.DEG$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+cluster.0.HF_vs_MF.DEG$cluster <- "cortex"
+cluster.0.HF_vs_MF.DEG <- as.data.frame(cluster.0.HF_vs_MF.DEG)
+cluster.0.HF_vs_MF.DEG <- cluster.0.HF_vs_MF.DEG%>%arrange(desc(avg_log2FC))
+
+# cluster 1
+cluster.1.HF_vs_MF.DEG$gene <- rownames(cluster.1.HF_vs_MF.DEG)
+cluster.1.HF_vs_MF.DEG$condition <- ifelse(cluster.1.HF_vs_MF.DEG$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+cluster.1.HF_vs_MF.DEG$cluster <- "c1"
+cluster.1.HF_vs_MF.DEG <- as.data.frame(cluster.1.HF_vs_MF.DEG)
+cluster.1.HF_vs_MF.DEG <- cluster.1.HF_vs_MF.DEG%>%arrange(desc(avg_log2FC))
+
+# cluster 2
+cluster.2.HF_vs_MF.DEG$gene <- rownames(cluster.2.HF_vs_MF.DEG)
+cluster.2.HF_vs_MF.DEG$condition <- ifelse(cluster.2.HF_vs_MF.DEG$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+cluster.2.HF_vs_MF.DEG$cluster <- "c2"
+cluster.2.HF_vs_MF.DEG <- as.data.frame(cluster.2.HF_vs_MF.DEG)
+cluster.2.HF_vs_MF.DEG <- cluster.2.HF_vs_MF.DEG%>%arrange(desc(avg_log2FC))
+
+# Hippocampus
+cluster.hippocampus.HF_vs_MF.DEG$gene <- rownames(cluster.hippocampus.HF_vs_MF.DEG)
+cluster.hippocampus.HF_vs_MF.DEG$condition <- ifelse(cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+cluster.hippocampus.HF_vs_MF.DEG$cluster <- "hippocampus"
+cluster.hippocampus.HF_vs_MF.DEG <- as.data.frame(cluster.hippocampus.HF_vs_MF.DEG)
+cluster.hippocampus.HF_vs_MF.DEG <- cluster.hippocampus.HF_vs_MF.DEG%>%arrange(desc(avg_log2FC))
+
+
+# cluster 4
+cluster.4.HF_vs_MF.DEG$gene <- rownames(cluster.4.HF_vs_MF.DEG)
+cluster.4.HF_vs_MF.DEG$condition <- ifelse(cluster.4.HF_vs_MF.DEG$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+cluster.4.HF_vs_MF.DEG$cluster <- "c4"
+cluster.4.HF_vs_MF.DEG <- as.data.frame(cluster.4.HF_vs_MF.DEG)
+cluster.4.HF_vs_MF.DEG <- cluster.4.HF_vs_MF.DEG%>%arrange(desc(avg_log2FC))
+
+# cluster 5
+cluster.5.HF_vs_MF.DEG$gene <- rownames(cluster.5.HF_vs_MF.DEG)
+cluster.5.HF_vs_MF.DEG$condition <- ifelse(cluster.5.HF_vs_MF.DEG$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+cluster.5.HF_vs_MF.DEG$cluster <- "c5"
+cluster.5.HF_vs_MF.DEG <- as.data.frame(cluster.5.HF_vs_MF.DEG)
+cluster.5.HF_vs_MF.DEG <- cluster.5.HF_vs_MF.DEG%>%arrange(desc(avg_log2FC))
+
+```
+
+
+```{r}
+# cluster 0
+marker.cluster.0.HF_vs_MF.DEG <- cluster.0.HF_vs_MF.DEG
+marker.cluster.0.HF_vs_MF.DEG$sig <- ""
+marker.cluster.0.HF_vs_MF.DEG$sig[abs(marker.clust；ｌｂｏ　ｉｋ２ｖｕ＜＞／；er.0.HF_vs_MF.DEG$avg_log2FC) > log2(1.2) & marker.cluster.0.HF_vs_MF.DEG$p_val_adj < 0.05] <- "ctx_sig"
+marker.cluster.0.HF_vs_MF.DEG$sig[marker.cluster.0.HF_vs_MF.DEG$sig == ""] <- "not_sig"
+marker.cluster.0.HF_vs_MF.DEG$sig <- factor(marker.cluster.0.HF_vs_MF.DEG$sig, levels = c("not_sig","ctx_sig"))
+
+marker.cluster.0.HF_vs_MF.DEG <- marker.cluster.0.HF_vs_MF.DEG%>%arrange(cluster,sig)
+
+marker.cluster.0.HF_vs_MF.DEG$avg_log2FC[marker.cluster.0.HF_vs_MF.DEG$avg_log2FC > 3] <- 3
+marker.cluster.0.HF_vs_MF.DEG$avg_log2FC[marker.cluster.0.HF_vs_MF.DEG$avg_log2FC < c(-3)] <- -3
+
+marker.cluster.0.HF_vs_MF.DEG$padj_log10_neg <-  -log10(marker.cluster.0.HF_vs_MF.DEG$p_val_adj)
+marker.cluster.0.HF_vs_MF.DEG$padj_log10_neg <- ifelse(marker.cluster.0.HF_vs_MF.DEG$avg_log2FC > 0,
+                                        marker.cluster.0.HF_vs_MF.DEG$padj_log10_neg,
+                                        -marker.cluster.0.HF_vs_MF.DEG$padj_log10_neg)
+
+# cluster 1
+marker.cluster.1.HF_vs_MF.DEG <- cluster.1.HF_vs_MF.DEG
+marker.cluster.1.HF_vs_MF.DEG$sig <- ""
+marker.cluster.1.HF_vs_MF.DEG$sig[abs(marker.cluster.1.HF_vs_MF.DEG$avg_log2FC) > log2(1.2) & marker.cluster.1.HF_vs_MF.DEG$p_val_adj < 0.05] <- "c1_sig"
+marker.cluster.1.HF_vs_MF.DEG$sig[marker.cluster.1.HF_vs_MF.DEG$sig == ""] <- "not_sig"
+marker.cluster.1.HF_vs_MF.DEG$sig <- factor(marker.cluster.1.HF_vs_MF.DEG$sig, levels = c("not_sig","c1_sig"))
+
+marker.cluster.1.HF_vs_MF.DEG <- marker.cluster.1.HF_vs_MF.DEG%>%arrange(cluster,sig)
+
+marker.cluster.1.HF_vs_MF.DEG$avg_log2FC[marker.cluster.1.HF_vs_MF.DEG$avg_log2FC > 3] <- 3
+marker.cluster.1.HF_vs_MF.DEG$avg_log2FC[marker.cluster.1.HF_vs_MF.DEG$avg_log2FC < c(-3)] <- -3
+
+marker.cluster.1.HF_vs_MF.DEG$padj_log10_neg <-  -log10(marker.cluster.1.HF_vs_MF.DEG$p_val_adj)
+marker.cluster.1.HF_vs_MF.DEG$padj_log10_neg <- ifelse(marker.cluster.1.HF_vs_MF.DEG$avg_log2FC > 0,
+                                        marker.cluster.1.HF_vs_MF.DEG$padj_log10_neg,
+                                        -marker.cluster.1.HF_vs_MF.DEG$padj_log10_neg)
+
+
+
+# cluster 2
+marker.cluster.2.HF_vs_MF.DEG <- cluster.2.HF_vs_MF.DEG
+marker.cluster.2.HF_vs_MF.DEG$sig <- ""
+marker.cluster.2.HF_vs_MF.DEG$sig[abs(marker.cluster.2.HF_vs_MF.DEG$avg_log2FC) > log2(1.2) & marker.cluster.2.HF_vs_MF.DEG$p_val_adj < 0.05] <- "c2_sig"
+marker.cluster.2.HF_vs_MF.DEG$sig[marker.cluster.2.HF_vs_MF.DEG$sig == ""] <- "not_sig"
+marker.cluster.2.HF_vs_MF.DEG$sig <- factor(marker.cluster.2.HF_vs_MF.DEG$sig, levels = c("not_sig","c2_sig"))
+
+marker.cluster.2.HF_vs_MF.DEG <- marker.cluster.2.HF_vs_MF.DEG%>%arrange(cluster,sig)
+
+marker.cluster.2.HF_vs_MF.DEG$avg_log2FC[marker.cluster.2.HF_vs_MF.DEG$avg_log2FC > 3] <- 3
+marker.cluster.2.HF_vs_MF.DEG$avg_log2FC[marker.cluster.2.HF_vs_MF.DEG$avg_log2FC < c(-3)] <- -3
+
+marker.cluster.2.HF_vs_MF.DEG$padj_log10_neg <-  -log10(marker.cluster.2.HF_vs_MF.DEG$p_val_adj)
+marker.cluster.2.HF_vs_MF.DEG$padj_log10_neg <- ifelse(marker.cluster.2.HF_vs_MF.DEG$avg_log2FC > 0,
+                                        marker.cluster.2.HF_vs_MF.DEG$padj_log10_neg,
+                                        -marker.cluster.2.HF_vs_MF.DEG$padj_log10_neg)
+
+
+# cluster 3
+cluster.hippocampus.HF_vs_MF.DEG <- cluster.hippocampus.HF_vs_MF.DEG
+cluster.hippocampus.HF_vs_MF.DEG$sig <- ""
+cluster.hippocampus.HF_vs_MF.DEG$sig[abs(cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC) > log2(1.2) & cluster.hippocampus.HF_vs_MF.DEG$p_val_adj < 0.05] <- "hip_sig"
+cluster.hippocampus.HF_vs_MF.DEG$sig[cluster.hippocampus.HF_vs_MF.DEG$sig == ""] <- "not_sig"
+cluster.hippocampus.HF_vs_MF.DEG$sig <- factor(cluster.hippocampus.HF_vs_MF.DEG$sig,levels = c("not_sig","hip_sig"))
+
+cluster.hippocampus.HF_vs_MF.DEG <- cluster.hippocampus.HF_vs_MF.DEG%>%arrange(cluster,sig)
+
+cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC[cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC > 3] <- 3
+cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC[cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC < c(-3)] <- -3
+
+
+cluster.hippocampus.HF_vs_MF.DEG$padj_log10_neg <-  -log10(cluster.hippocampus.HF_vs_MF.DEG$p_val_adj)
+cluster.hippocampus.HF_vs_MF.DEG$padj_log10_neg <- ifelse(cluster.hippocampus.HF_vs_MF.DEG$avg_log2FC > 0,
+                                        cluster.hippocampus.HF_vs_MF.DEG$padj_log10_neg,
+                                        -cluster.hippocampus.HF_vs_MF.DEG$padj_log10_neg)
+
+
+# cluster 4
+marker.cluster.4.HF_vs_MF.DEG <- cluster.4.HF_vs_MF.DEG
+marker.cluster.4.HF_vs_MF.DEG$sig <- ""
+marker.cluster.4.HF_vs_MF.DEG$sig[abs(marker.cluster.4.HF_vs_MF.DEG$avg_log2FC) > log2(1.2) & marker.cluster.4.HF_vs_MF.DEG$p_val_adj < 0.05] <- "c4_sig"
+marker.cluster.4.HF_vs_MF.DEG$sig[marker.cluster.4.HF_vs_MF.DEG$sig == ""] <- "not_sig"
+marker.cluster.4.HF_vs_MF.DEG$sig <- factor(marker.cluster.4.HF_vs_MF.DEG$sig, levels = c("not_sig","c4_sig"))
+
+marker.cluster.4.HF_vs_MF.DEG <- marker.cluster.4.HF_vs_MF.DEG%>%arrange(cluster,sig)
+
+marker.cluster.4.HF_vs_MF.DEG$avg_log2FC[marker.cluster.4.HF_vs_MF.DEG$avg_log2FC > 3] <- 3
+marker.cluster.4.HF_vs_MF.DEG$avg_log2FC[marker.cluster.4.HF_vs_MF.DEG$avg_log2FC < c(-3)] <- -3
+
+marker.cluster.4.HF_vs_MF.DEG$padj_log10_neg <-  -log10(marker.cluster.4.HF_vs_MF.DEG$p_val_adj)
+marker.cluster.4.HF_vs_MF.DEG$padj_log10_neg <- ifelse(marker.cluster.4.HF_vs_MF.DEG$avg_log2FC > 0,
+                                        marker.cluster.4.HF_vs_MF.DEG$padj_log10_neg,
+                                        -marker.cluster.4.HF_vs_MF.DEG$padj_log10_neg)
+
+# cluster 5
+marker.cluster.5.HF_vs_MF.DEG <- cluster.5.HF_vs_MF.DEG
+marker.cluster.5.HF_vs_MF.DEG$sig <- ""
+marker.cluster.5.HF_vs_MF.DEG$sig[abs(marker.cluster.5.HF_vs_MF.DEG$avg_log2FC) > log2(1.2) & marker.cluster.5.HF_vs_MF.DEG$p_val_adj < 0.05] <- "c5_sig"
+marker.cluster.5.HF_vs_MF.DEG$sig # cat broke this part, be careful
+
+marker.cluster.5.HF_vs_MF.DEG <- marker.cluster.5.HF_vs_MF.DEG%>%arrange(cluster,sig)
+
+marker.cluster.5.HF_vs_MF.DEG$avg_log2FC[marker.cluster.5.HF_vs_MF.DEG$avg_log2FC > 3] <- 3
+marker.cluster.5.HF_vs_MF.DEG$avg_log2FC[marker.cluster.5.HF_vs_MF.DEG$avg_log2FC < c(-3)] <- -3
+
+marker.cluster.5.HF_vs_MF.DEG$padj_log10_neg <-  -log10(marker.cluster.5.HF_vs_MF.DEG$p_val_adj)
+marker.cluster.5.HF_vs_MF.DEG$padj_log10_neg <- ifelse(marker.cluster.5.HF_vs_MF.DEG$avg_log2FC > 0,
+                                        marker.cluster.5.HF_vs_MF.DEG$padj_log10_neg,
+                                        -marker.cluster.5.HF_vs_MF.DEG$padj_log10_neg)
+
+
+
+
+
+condition.DEG <- rbind(marker.cluster.0.HF_vs_MF.DEG, marker.cluster.1.HF_vs_MF.DEG,
+                       marker.cluster.2.HF_vs_MF.DEG, cluster.hippocampus.HF_vs_MF.DEG,
+                       marker.cluster.4.HF_vs_MF.DEG,marker.cluster.5.HF_vs_MF.DEG)
+
+condition.DEG <- condition.DEG%>%arrange(cluster,sig)
+
+condition.DEG$padj_log10_neg <-  -log10(condition.DEG$p_val_adj)
+condition.DEG$padj_log10_neg <- ifelse(condition.DEG$avg_log2FC > 0,
+                                        condition.DEG$padj_log10_neg,
+                                        -condition.DEG$padj_log10_neg)
+```
+
+
+
+```{r}
+color_ct <- c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF","#F564E3")
+names(color_ct) <- c("ctx_sig","c1_sig","c2_sig","hip_sig","c4_sig","c5_sig")
+
+
+plot.list=list()
+for (ci in c("cortex","c1","c2","hippocampus","c4","c5")) {
+  print(ci)
+  tmpdf=condition.DEG %>% filter(cluster == ci)
+  minabs=abs(min(tmpdf$padj_log10_neg))
+  maxabs=max(tmpdf$padj_log10_neg)
+  thre=0
+  if(minabs < maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > minabs] = minabs
+    thre=minabs
+  }
+  if(minabs > maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-maxabs)] = -maxabs
+    thre=maxabs
+  }
+  if(minabs == maxabs & maxabs == Inf) {
+    thre = min(
+      abs(
+        range(
+          tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < Inf & tmpdf$padj_log10_neg > -Inf]
+        )
+      )
+    )
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-thre)] = -thre
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > thre] = thre
+  }
+  
+  plotdata = tmpdf
+  tmpdf=tmpdf%>%filter(sig != "not") #这里我取了logFC最极端的几个gene来标注文本，实际处理中不一定这样做
+  tmpdf=tmpdf%>%arrange(desc(avg_log2FC))
+  tmpdf.a=head(tmpdf%>%filter(avg_log2FC > 0),5)
+  tmpdf.a$d=thre*2*0.05+(-thre)-tmpdf.a$padj_log10_neg
+  tmpdf.b=tail(tmpdf%>%filter(avg_log2FC < 0),5)
+  tmpdf.b$d=thre*2*0.95-thre  - tmpdf.b$padj_log10_neg
+  textdata.down = tmpdf.b
+  textdata.up   = tmpdf.a
+  
+  ###画图
+  tmpplot=plotdata%>%ggplot(aes(x=padj_log10_neg,y=avg_log2FC))+
+    geom_point(aes(color=sig),size=3)+
+    geom_hline(yintercept = c(-log2(1.2),log2(1.2)),linetype="dashed")+
+    geom_hline(yintercept = c(0),linetype="solid")+
+    # geom_text_repel(data = textdata.down,
+    #                 mapping = aes(label=gene),
+    #                 nudge_x=textdata.down$d,
+    #                 direction = "y", hjust = 1,segment.size = 0.2)+
+    # geom_text_repel(data = textdata.up,
+    #                 mapping = aes(label=gene),
+    #                 nudge_x=textdata.up$d,
+    #                 direction = "y", hjust = 0,segment.size = 0.2)+
+    labs(title = ci)+
+    scale_color_manual(values = c(color_ct,"not_sig"="#dee1e6"))+
+    scale_y_continuous("log2(Fold Change)",expand = c(0.02,0),limits = c(-3,3))+
+    theme_bw()+
+    theme(
+      panel.grid = element_blank(),
+      legend.position = "none",
+      
+      axis.ticks.x.bottom = element_blank(),
+      axis.text.x.bottom = element_blank(),
+      axis.title.x.bottom = element_blank(),
+      axis.text.y.left = element_text(size = 14,color = "black"),
+      axis.title.y.left = element_text(size = 16),
+      
+      plot.title = element_text(size = 16,hjust = 0.5)
+    )
+  
+  index=which(ci == c("cortex","c1","c2","hippocampus","c4","c5"))
+  if (index!=1) {
+    tmpplot=tmpplot+theme(
+      axis.title.y.left = element_blank(),
+      axis.ticks.y.left = element_blank(),
+      axis.text.y.left = element_blank()
+    )
+  }
+  # if (index == length(sort(unique(as.character(marker.cluster.0.HF_vs_MF.DEG$cluster))))) {
+  #   segment.df=data.frame(x=c(0 - thre / 5,0 + thre / 5),
+  #                         xend=c(-thre,thre),
+  #                         y=c(-3,-3),
+  #                         yend=c(-3,-3))
+  #   tmpplot=tmpplot+geom_segment(data = segment.df,
+  #                                mapping = aes(x=x,xend=xend,y=y,yend=yend),
+  #                                arrow = arrow(length=unit(0.0, "cm"))
+  #                                )
+  #   
+  # }
+  plot.list[[get("index")]]=tmpplot
+} 
+
+wrap_plots(plot.list,ncol = 6)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+
+# # ggsave('./High_resolution/TransformVolcano.ncol3.merged.tiff', device='tiff', dpi=500,
+# #        height = 8, width = 4, unit = 'in')
+# 
+# # ggsave('./High_resolution/TransformVolcano.ncol6.merged.tiff', device='tiff', dpi=500,
+# #        height = 6, width = 8, unit = 'in')
+```
+
+
+```{r}
+modify_cluster <- function(cluster, label) {
+  cluster$gene <- rownames(cluster)
+  cluster$condition <- ifelse(cluster$avg_log2FC > 0, paste0("Up"), paste0("Down"))
+  cluster$cluster <- label
+  cluster <- as.data.frame(cluster)
+  cluster <- cluster %>% arrange(desc(avg_log2FC))
+  
+  # Define significant genes
+  cluster$sig <- ""
+  cluster$sig[abs(cluster$avg_log2FC) > log2(1.2) & cluster$p_val_adj < 0.05] <- paste0(label, "_sig")
+  cluster$sig[cluster$sig == ""] <- "not_sig"
+  cluster$sig <- factor(cluster$sig, levels = c("not_sig", paste0(label, "_sig")))
+
+  # Arrange and limit log2FC values
+  cluster <- cluster %>% arrange(cluster, sig)
+  cluster$avg_log2FC[cluster$avg_log2FC > 3] <- 3
+  cluster$avg_log2FC[cluster$avg_log2FC < -3] <- -3
+
+  # Compute negative log10 of adjusted p-values
+  cluster$padj_log10_neg <- -log10(cluster$p_val_adj)
+  cluster$padj_log10_neg <- ifelse(cluster$avg_log2FC > 0,
+                                    cluster$padj_log10_neg,
+                                    -cluster$padj_log10_neg)
+  return(cluster)
+}
+
+# hip0
+marker.cluster.hippocampus_0.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_0.HF_vs_MF.DEG, "hip0")
+
+# hip1
+marker.cluster.hippocampus_1.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_1.HF_vs_MF.DEG, "hip1")
+
+# hip2
+marker.cluster.hippocampus_2.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_2.HF_vs_MF.DEG, "hip2")
+
+# hip3
+marker.cluster.hippocampus_3.HF_vs_MF.DEG <- modify_cluster(cluster.hippocampus_3.HF_vs_MF.DEG, "hip3")
+
+
+hippocampus.condition.DEG <- rbind(marker.cluster.hippocampus_0.HF_vs_MF.DEG, marker.cluster.hippocampus_1.HF_vs_MF.DEG,
+                                   marker.cluster.hippocampus_2.HF_vs_MF.DEG,marker.cluster.hippocampus_3.HF_vs_MF.DEG)
+
+hippocampus.condition.DEG <- hippocampus.condition.DEG%>%arrange(cluster,sig)
+
+hippocampus.condition.DEG$padj_log10_neg <-  -log10(hippocampus.condition.DEG$p_val_adj)
+hippocampus.condition.DEG$padj_log10_neg <- ifelse(hippocampus.condition.DEG$avg_log2FC > 0,
+                                        hippocampus.condition.DEG$padj_log10_neg,
+                                        -hippocampus.condition.DEG$padj_log10_neg)
+
+```
+
+```{r}
+
+hippocampus.condition.DEG$condition[hippocampus.condition.DEG$sig == "not_sig"] <- "NS"
+
+color_ct <- c("Up"="red", "Down"="blue", "not_sig"="#dee1e6")
+
+hip.plot.list=list()
+for (ci in c("hip0","hip1","hip2","hip3")) {
+  print(ci)
+  tmpdf=hippocampus.condition.DEG %>% filter(cluster == ci)
+  minabs=abs(min(tmpdf$padj_log10_neg))
+  maxabs=max(tmpdf$padj_log10_neg)
+  thre=0
+  if(minabs < maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > minabs] = minabs
+    thre=minabs
+  }
+  if(minabs > maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-maxabs)] = -maxabs
+    thre=maxabs
+  }
+  if(minabs == maxabs & maxabs == Inf) {
+    thre = min(
+      abs(
+        range(
+          tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < Inf & tmpdf$padj_log10_neg > -Inf]
+        )
+      )
+    )
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-thre)] = -thre
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > thre] = thre
+  }
+  
+  plotdata = tmpdf
+  tmpdf=tmpdf%>%filter(sig != "not") #这里我取了logFC最极端的几个gene来标注文本，实际处理中不一定这样做
+  tmpdf=tmpdf%>%arrange(desc(avg_log2FC))
+  tmpdf.a=head(tmpdf%>%filter(avg_log2FC > 0),5)
+  tmpdf.a$d=thre*2*0.05+(-thre)-tmpdf.a$padj_log10_neg
+  tmpdf.b=tail(tmpdf%>%filter(avg_log2FC < 0),5)
+  tmpdf.b$d=thre*2*0.95-thre  - tmpdf.b$padj_log10_neg
+  textdata.down = tmpdf.b
+  textdata.up   = tmpdf.a
+  
+  ###画图
+  tmpplot=plotdata%>%ggplot(aes(x=padj_log10_neg,y=avg_log2FC))+
+    geom_point(aes(color=condition),size=3)+
+    geom_hline(yintercept = c(-log2(1.2),log2(1.2)),linetype="dashed")+
+    geom_hline(yintercept = c(0),linetype="solid")+
+    # geom_text_repel(data = textdata.down,
+    #                 mapping = aes(label=gene),
+    #                 nudge_x=textdata.down$d,
+    #                 direction = "y", hjust = 1,segment.size = 0.2)+
+    # geom_text_repel(data = textdata.up,
+    #                 mapping = aes(label=gene),
+    #                 nudge_x=textdata.up$d,
+    #                 direction = "y", hjust = 0,segment.size = 0.2)+
+    labs(title = ci)+
+    scale_color_manual(values =  c("Up" = "red", "Down" = "blue", "NS" = "grey"))+
+    scale_y_continuous("log2(Fold Change)",expand = c(0.02,0),limits = c(-3,3))+
+    theme_bw()+
+    theme(
+      panel.grid = element_blank(),
+      legend.position = "none",
+      
+      axis.ticks.x.bottom = element_blank(),
+      axis.text.x.bottom = element_blank(),
+      axis.title.x.bottom = element_blank(),
+      axis.text.y.left = element_text(size = 14,color = "black"),
+      axis.title.y.left = element_text(size = 16),
+      
+      plot.title = element_text(size = 16,hjust = 0.5)
+    )
+  
+  index=which(ci == c("hip0","hip1","hip2","hip3"))
+  if (index!=1) {
+    tmpplot=tmpplot+theme(
+      axis.title.y.left = element_blank(),
+      axis.ticks.y.left = element_blank(),
+      axis.text.y.left = element_blank()
+    )
+  }
+  # if (index == length(sort(unique(as.character(marker.cluster.0.HF_vs_MF.DEG$cluster))))) {
+  #   segment.df=data.frame(x=c(0 - thre / 5,0 + thre / 5),
+  #                         xend=c(-thre,thre),
+  #                         y=c(-3,-3),
+  #                         yend=c(-3,-3))
+  #   tmpplot=tmpplot+geom_segment(data = segment.df,
+  #                                mapping = aes(x=x,xend=xend,y=y,yend=yend),
+  #                                arrow = arrow(length=unit(0.0, "cm"))
+  #                                )
+  #   
+  # }
+  hip.plot.list[[get("index")]]=tmpplot
+} 
+
+wrap_plots(hip.plot.list,ncol = 4)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+
+
+# ggsave('./High_resolution/TransformVolcano.hip.merged.tiff', device='tiff', dpi=500,
+#        height = 8, width = 6, unit = 'in')
+```
+
+
+
+```{r}
+# ctx0
+marker.cluster.ctx_0.HF_vs_MF.DEG <- modify_cluster(cluster.0_0.HF_vs_MF.DEG, "ctx0")
+
+# ctx1
+marker.cluster.ctx_1.HF_vs_MF.DEG <- modify_cluster(cluster.0_1.HF_vs_MF.DEG, "ctx1")
+
+# ctx2
+marker.cluster.ctx_2.HF_vs_MF.DEG <- modify_cluster(cluster.0_2.HF_vs_MF.DEG, "ctx2")
+
+# ctx3
+marker.cluster.ctx_3.HF_vs_MF.DEG <- modify_cluster(cluster.0_3.HF_vs_MF.DEG, "ctx3")
+
+# ctx4
+marker.cluster.ctx_4.HF_vs_MF.DEG <- modify_cluster(cluster.0_4.HF_vs_MF.DEG, "ctx4")
+
+# ctx5
+marker.cluster.ctx_5.HF_vs_MF.DEG <- modify_cluster(cluster.0_5.HF_vs_MF.DEG, "ctx5")
+
+
+ctx.condition.DEG <- rbind(marker.cluster.ctx_0.HF_vs_MF.DEG, marker.cluster.ctx_1.HF_vs_MF.DEG,
+                           marker.cluster.ctx_2.HF_vs_MF.DEG, marker.cluster.ctx_3.HF_vs_MF.DEG,
+                           marker.cluster.ctx_4.HF_vs_MF.DEG, marker.cluster.ctx_5.HF_vs_MF.DEG)
+
+ctx.condition.DEG <- ctx.condition.DEG%>%arrange(cluster,sig)
+
+ctx.condition.DEG$padj_log10_neg <-  -log10(ctx.condition.DEG$p_val_adj)
+ctx.condition.DEG$padj_log10_neg <- ifelse(ctx.condition.DEG$avg_log2FC > 0,
+                                        ctx.condition.DEG$padj_log10_neg,
+                                        -ctx.condition.DEG$padj_log10_neg)
+```
+
+
+```{r}
+
+ctx.condition.DEG$condition[ctx.condition.DEG$sig == "not_sig"] <- "NS"
+
+color_ct <- c("Up"="red", "Down"="blue", "not_sig"="#dee1e6")
+
+ctx.plot.list=list()
+for (ci in c("ctx0","ctx1","ctx2","ctx3","ctx4","ctx5")) {
+  print(ci)
+  tmpdf=ctx.condition.DEG %>% filter(cluster == ci)
+  minabs=abs(min(tmpdf$padj_log10_neg))
+  maxabs=max(tmpdf$padj_log10_neg)
+  thre=0
+  if(minabs < maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > minabs] = minabs
+    thre=minabs
+  }
+  if(minabs > maxabs) {
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-maxabs)] = -maxabs
+    thre=maxabs
+  }
+  if(minabs == maxabs & maxabs == Inf) {
+    thre = min(
+      abs(
+        range(
+          tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < Inf & tmpdf$padj_log10_neg > -Inf]
+        )
+      )
+    )
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg < (-thre)] = -thre
+    tmpdf$padj_log10_neg[tmpdf$padj_log10_neg > thre] = thre
+  }
+  
+  plotdata = tmpdf
+  tmpdf=tmpdf%>%filter(sig != "not") #这里我取了logFC最极端的几个gene来标注文本，实际处理中不一定这样做
+  tmpdf=tmpdf%>%arrange(desc(avg_log2FC))
+  tmpdf.a=head(tmpdf%>%filter(avg_log2FC > 0),5)
+  tmpdf.a$d=thre*2*0.05+(-thre)-tmpdf.a$padj_log10_neg
+  tmpdf.b=tail(tmpdf%>%filter(avg_log2FC < 0),5)
+  tmpdf.b$d=thre*2*0.95-thre  - tmpdf.b$padj_log10_neg
+  textdata.down = tmpdf.b
+  textdata.up   = tmpdf.a
+  
+  ###画图
+  tmpplot=plotdata%>%ggplot(aes(x=padj_log10_neg,y=avg_log2FC))+
+    geom_point(aes(color=condition),size=3)+
+    geom_hline(yintercept = c(-log2(1.2),log2(1.2)),linetype="dashed")+
+    geom_hline(yintercept = c(0),linetype="solid")+
+    labs(title = ci)+
+    scale_color_manual(values =  c("Up" = "red", "Down" = "blue", "NS" = "grey"))+
+    scale_y_continuous("log2(Fold Change)",expand = c(0.02,0),limits = c(-3,3))+
+    theme_bw()+
+    theme(
+      panel.grid = element_blank(),
+      legend.position = "none",
+      
+      axis.ticks.x.bottom = element_blank(),
+      axis.text.x.bottom = element_blank(),
+      axis.title.x.bottom = element_blank(),
+      axis.text.y.left = element_text(size = 14,color = "black"),
+      axis.title.y.left = element_text(size = 16),
+      
+      plot.title = element_text(size = 16,hjust = 0.5)
+    )
+  
+  index=which(ci == c("ctx0","ctx1","ctx2","ctx3","ctx4","ctx5"))
+  if (index!=1) {
+    tmpplot=tmpplot+theme(
+      axis.title.y.left = element_blank(),
+      axis.ticks.y.left = element_blank(),
+      axis.text.y.left = element_blank()
+    )
+  }
+
+  ctx.plot.list[[get("index")]]=tmpplot
+} 
+
+wrap_plots(ctx.plot.list,ncol = 6)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+
+
+
+# ggsave('./High_resolution/TransformVolcano.ctx.merged.tiff', device='tiff', dpi=500,
+#        height = 6, width = 8, unit = 'in')
+```
+
+
+
+
+
+
+```{r}
+wrap_plots(hip.plot.list,ncol = 4)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+wrap_plots(ctx.plot.list,ncol = 6)&theme(plot.margin = unit(c(0,0,0,0),"cm")) # 400*500  800*500
+
+wrap_plots(c(hip.plot.list,ctx.plot.list),ncol = 10)&theme(plot.margin = unit(c(0,0,0,0),"cm"))
+
+
+ggsave('./High_resolution/TransformVolcano.hip.ctx.merged.tiff', device='tiff', dpi=500,
+       height = 8, width = 16, unit = 'in')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+# Initialize empty lists to store counts
+upregulated_counts <- numeric(13)
+downregulated_counts <- numeric(13)
+
+# Filter the DEG lists and count the number of upregulated and downregulated genes
+for (i in 0:12) {
+  deg_list <- get(paste("cluster",i,"HF_vs_MF.DEG",sep = "."))
+  
+  # Filter by adjusted p-value and log fold change
+  deg_list_filtered <- deg_list %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2))
+  
+  # Count the number of upregulated and downregulated genes
+  upregulated_counts[i + 1] <- sum(deg_list_filtered$avg_log2FC > 0)
+  downregulated_counts[i + 1] <- sum(deg_list_filtered$avg_log2FC < 0)
+}
+
+downregulated_counts <- -downregulated_counts
+# Create a dataframe for plotting
+deg_counts <- data.frame(
+  cluster = factor(rep(0:12, 2)),
+  direction = factor(rep(c("Upregulated", "Downregulated"), each = 13)),
+  count = c(upregulated_counts, downregulated_counts)
+)
+
+# Create the barplot
+ggplot(deg_counts, aes(x = cluster, y = count, fill = direction)) +
+  geom_bar(stat = "identity", position = "identity") +
+  theme_minimal() + #   theme(panel.grid = element_blank())
+  labs(x = "Cluster", y = "Number of DEGs", fill = "Direction") +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue"))
+
+```
+
+
+# 
+```{r}
+
+# List all variables in the environment
+all_vars <- ls()
+
+# Find variables starting with "cluster." and containing "HF_vs_MF.DEG"
+matching_vars <- grep("^cluster\\..*HF_vs_MF\\.DEG", all_vars, value = TRUE)
+
+three_underscores <- grepl("^.*_.*_.*_.*$", matching_vars)
+matching_vars <- matching_vars[!three_underscores]
+
+for (cluster in matching_vars) {
+  deg <- get(cluster)
+  deg <- deg %>% dplyr::filter(p_val_adj < 0.05, abs(avg_log2FC) > log2(1.2), pct.1 > 0.1, pct.2 > 0.1)
+  eg  <-  bitr(rownames(deg), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db")
+  
+  assign(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP", sep = "."),
+         enrichGO(gene          = eg$ENTREZID,
+                  OrgDb         = org.Mm.eg.db,
+                  ont           = "BP",
+                  pAdjustMethod = "BH",
+                  pvalueCutoff  = 0.05,
+                  qvalueCutoff = 0.05,
+                  readable      = TRUE))
+  
+  assign(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP", sep = "."),
+         pairwise_termsim(get(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP", sep = "."))))
+  
+  assign(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP2.padj", sep = "."),
+         simplify(get(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP", sep = "."))))
+  
+  assign(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP2.count", sep = "."),
+       simplify(get(paste(gsub("\\.HF_vs_MF\\.DEG", "", cluster), "GOBP", sep = ".")), by = "Count", select_fun = max))
+}
+```
+
+
+```{r}
+all_vars <- ls()
+GO.padj.matching_vars <- grep("*GOBP2\\.padj$", all_vars, value = TRUE)
+GO.count.matching_vars <- grep("*GOBP2\\.count$", all_vars, value = TRUE)
+
+for (GO in GO.padj.matching_vars){
+  assign(paste(GO,"filter",sep = "."),
+         get(GO)@result %>% dplyr::filter(p.adjust < 0.05))
+  write.csv(get(paste(GO,"filter",sep = ".")), file = paste(GO,"filter.csv",sep = "."))
+}
+
+
+for (go in GO.count.matching_vars){
+  assign(paste(go,"filter",sep = "."),
+         get(go)@result %>% dplyr::filter(p.adjust < 0.05))
+  write.csv(get(paste(go,"filter",sep = ".")), file = paste(go,"filter.csv",sep = "."))
+}
+```
+
+
+
+```{r}
+save.image("temp3.Rdata")
+```
+
+
+
+
+
+
+
+```{r}
+count.ls <- list(cluster0 = cluster.0.GOBP2.count.filter$Description,
+                 cluster1 = cluster.1.GOBP2.count.filter$Description,
+                 cluster2 = cluster.2.GOBP2.count.filter$Description,
+                 cluster.hippo = cluster.hippocampus.GOBP2.count.filter$Description,
+                 cluster4 = cluster.4.GOBP2.count.filter$Description,
+                 cluster5 = cluster.5.GOBP2.count.filter$Description)
+
+ggvenn(count.ls)
+
+ggsave('./High_resolution/Venn.GOBP.count.tiff', device='tiff', dpi=500,
+       height = 8, width = 12, unit = 'in')
+```
+
+
+```{r}
+GOBP.count.ref <- unique(unlist(count.ls))
+
+
+GOBP.count.df <- data.frame(cluster_0 = GOBP.count.ref %in% cluster.0.GOBP2.count.filter$Description,
+                            cluster_1 = GOBP.count.ref %in% cluster.1.GOBP2.count.filter$Description,
+                            cluster_2 = GOBP.count.ref %in%  cluster.2.GOBP2.count.filter$Description,
+                            cluster_hippo = GOBP.count.ref %in%  cluster.hippocampus.GOBP2.count.filter$Description,
+                            cluster_4 = GOBP.count.ref %in%  cluster.4.GOBP2.count.filter$Description,
+                            cluster_5 = GOBP.count.ref %in%  cluster.5.GOBP2.count.filter$Description)
+
+rownames(GOBP.count.df) <- GOBP.count.ref
+
+GOBP.count.genre <- rev(colnames(GOBP.count.df))
+
+# genre <- colnames(general.anatomy.DEG)
+
+upset(GOBP.count.df, GOBP.count.genre,
+                        name='Comparisons', width_ratio=0.2, sort_sets=FALSE,
+                        base_annotations=list(
+                          'Intersection size'=intersection_size(text=list(size = 4),
+                                                                counts=T,
+                                                                mapping=aes(fill='bars_color'))+
+                            scale_fill_manual(values=c('bars_color'='black'))),
+                        set_sizes=(
+                          upset_set_size()
+                          + geom_text(aes(label=..count..), hjust=1.1, stat='count')
+                          + expand_limits(y=1200)
+                          + theme(axis.text.x=element_text(angle=90,size = 15)))) +
+                    theme(text = element_text(size = 20,color = "black")) # 1500*800
+ggsave('./High_resolution/Upset.GOBP.count.tiff', device='tiff', dpi=500,
+       height = 8, width = 15, unit = 'in')
+```
+
+
+```{r}
+padj.ls <- list(cluster0 = cluster.0.GOBP2.padj.filter$Description,
+                 cluster1 = cluster.1.GOBP2.padj.filter$Description,
+                 cluster2 = cluster.2.GOBP2.padj.filter$Description,
+                 cluster.hippo = cluster.hippocampus.GOBP2.padj.filter$Description,
+                 cluster4 = cluster.4.GOBP2.padj.filter$Description,
+                 cluster5 = cluster.5.GOBP2.padj.filter$Description)
+
+ggvenn(padj.ls)
+
+ggsave('./High_resolution/Venn.GOBP.padj.tiff', device='tiff', dpi=500,
+       height = 8, width = 12, unit = 'in')
+```
+
+
+
+```{r}
+GOBP.padj.ref <- unique(unlist(padj.ls))
+
+
+GOBP.padj.df <- data.frame(cluster_0 = GOBP.padj.ref %in% cluster.0.GOBP2.padj.filter$Description,
+                            cluster_1 = GOBP.padj.ref %in% cluster.1.GOBP2.padj.filter$Description,
+                            cluster_2 = GOBP.padj.ref %in%  cluster.2.GOBP2.padj.filter$Description,
+                            cluster_hippo = GOBP.padj.ref %in%  cluster.hippocampus.GOBP2.padj.filter$Description,
+                            cluster_4 = GOBP.padj.ref %in%  cluster.4.GOBP2.padj.filter$Description,
+                            cluster_5 = GOBP.padj.ref %in%  cluster.5.GOBP2.padj.filter$Description)
+
+rownames(GOBP.padj.df) <- GOBP.padj.ref
+
+GOBP.padj.genre <- rev(colnames(GOBP.padj.df))
+
+# genre <- colnames(general.anatomy.DEG)
+
+upset(GOBP.padj.df, GOBP.padj.genre,
+                        name='Comparisons', width_ratio=0.2, sort_sets=FALSE,
+                        base_annotations=list(
+                          'Intersection size'=intersection_size(text=list(size = 4),
+                                                                counts=T,
+                                                                mapping=aes(fill='bars_color'))+
+                            scale_fill_manual(values=c('bars_color'='black'))),
+                        set_sizes=(
+                          upset_set_size()
+                          + geom_text(aes(label=..count..), hjust=1.1, stat='count')
+                          + expand_limits(y=1200)
+                          + theme(axis.text.x=element_text(angle=90,size = 15)))) +
+                    theme(text = element_text(size = 20,color = "black")) # 1500*800
+ggsave('./High_resolution/Upset.GOBP.padj.tiff', device='tiff', dpi=500,
+       height = 8, width = 15, unit = 'in')
+```
+
+
+
+# Top 3 count/pvalue
+```{r}
+library(reshape)
+library(reshape2)
+```
+
+
+```{r}
+# Assuming these are your data frames
+data_frames <- list(cluster.0.GOBP2.padj.filter, cluster.1.GOBP2.padj.filter, cluster.2.GOBP2.padj.filter, 
+                    cluster.4.GOBP2.padj.filter, cluster.5.GOBP2.padj.filter, cluster.hippocampus.GOBP2.padj.filter)
+
+# Combine all data frames into one, keeping track of the original data frame
+df_combined <- do.call(rbind, lapply(seq_along(data_frames), function(i) {
+  cbind(data_frames[[i]], cluster = paste0("cluster.", i-1))
+}))
+
+# Convert p.adjust to numeric
+df_combined$p.adjust <- as.numeric(as.character(df_combined$p.adjust))
+
+# Sort and Pick Top 3 based on p.adjust for each cluster
+df_sorted <- df_combined %>% group_by(cluster) %>% top_n(-3, p.adjust)
+
+# Compute -log10(p.adj)
+df_sorted$padj_log <- -log10(df_sorted$p.adjust)
+
+# Melt data for heatmap
+df_melt <- melt(df_sorted[,c("Description","padj_log", "cluster")], id.vars=c("Description", "cluster"))
+
+# Plot Heatmap
+ggplot(df_melt, aes(x=Description, y=cluster)) + 
+  geom_tile(aes(fill=value), colour="white") + 
+  scale_fill_gradient(low="white", high="steelblue") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_rect(size = 2,fill = NA))
+
+ggsave('./High_resolution/Heatmap.GOBP.padj.tiff', device='tiff', dpi=500,
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+
+```{r}
+# Assuming these are your data frames
+data_frames <- list(cluster.0.GOBP2.count.filter, cluster.1.GOBP2.count.filter, cluster.2.GOBP2.count.filter, 
+                    cluster.4.GOBP2.count.filter, cluster.5.GOBP2.count.filter, cluster.hippocampus.GOBP2.count.filter)
+
+# Combine all data frames into one, keeping track of the original data frame
+df_combined <- do.call(rbind, lapply(seq_along(data_frames), function(i) {
+  cbind(data_frames[[i]], cluster = paste0("cluster.", i-1))
+}))
+
+# Convert p.adjust to numeric
+df_combined$p.adjust <- as.numeric(as.character(df_combined$p.adjust))
+
+# Sort and Pick Top 3 based on p.adjust for each cluster
+df_sorted <- df_combined %>% group_by(cluster) %>% top_n(-3, p.adjust)
+
+# Compute -log10(p.adj)
+df_sorted$padj_log <- -log10(df_sorted$p.adjust)
+
+# Melt data for heatmap
+df_melt <- melt(df_sorted[,c("Description","padj_log", "cluster")], id.vars=c("Description", "cluster"))
+
+# Plot Heatmap
+ggplot(df_melt, aes(x=Description, y=cluster)) + 
+  geom_tile(aes(fill=value), colour="white") + 
+  scale_fill_gradient(low="white", high="steelblue") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_rect(size = 2,fill = NA))
+
+ggsave('./High_resolution/Heatmap.GOBP.count.tiff', device='tiff', dpi=500,
+       height = 8, width = 8, unit = 'in')
+```
+
+
+```{r}
+# Assuming these are your data frames
+data_frames <- list(cluster.0.GOBP2.padj.filter, cluster.1.GOBP2.padj.filter, cluster.2.GOBP2.padj.filter, 
+                    cluster.4.GOBP2.padj.filter, cluster.5.GOBP2.padj.filter, cluster.hippocampus.GOBP2.padj.filter)
+
+# Combine all data frames into one, keeping track of the original data frame
+df_combined <- do.call(rbind, lapply(seq_along(data_frames), function(i) {
+  cbind(data_frames[[i]], cluster = paste0("cluster.", i-1))
+}))
+
+# Create a list to store plots
+plot_list <- list()
+
+# Loop over clusters to create individual cnetplots
+for(i in GO.padj.matching_vars) {
+  
+  # Filter data for current cluster
+  data_cluster <- df_combined[df_combined$cluster == i, ]
+  
+  # Assume 'ego' is an enrichGO object obtained from an enrichment analysis
+  # ego <- enrichGO(...)
+  
+  # Use cnetplot function to create plot
+  p <- cnetplot(get(i))
+  
+  # Add plot to list
+  plot_list[[i]] <- p
+}
+
+# Arrange plots in a grid for comparison
+gridExtra::grid.arrange(grobs = plot_list, ncol = 2)
+
+
+cnetplot(cluster.0.GOBP2.padj.filter)
+
+ck@compareClusterResult
+```
+
+# Cortex GO
+```{r}
+
+for ( i in c(0:5)){
+  assign(paste("cluster.cortex_",i,".HF_vs_MF.filter.DEG.entrez", sep = ""),
+         bitr(rownames(get(paste("cluster.cortex_",i,".HF_vs_MF.filter.DEG", sep = ""))), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db"))
+}
+
+
+
+ctx.GO.compare <- list(ctx_0 = cluster.cortex_0.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_1 = cluster.cortex_1.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_2 = cluster.cortex_2.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_3 = cluster.cortex_3.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_4 = cluster.cortex_4.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       ctx_5 = cluster.cortex_5.HF_vs_MF.filter.DEG.entrez$ENTREZID)
+
+
+ctx.ck <- compareCluster(geneCluster = ctx.GO.compare, fun = enrichGO,OrgDb="org.Mm.eg.db", ont = "BP")
+ctx.ck <- setReadable(ctx.ck, OrgDb = org.Mm.eg.db, keyType="ENTREZID")
+
+
+ctx.ck <- pairwise_termsim(ctx.ck)
+ctx.ck1 <- simplify(ctx.ck)
+ctx.ck2 <- simplify(ctx.ck, by = "Count", select_fun = max)
+
+write.csv(ctx.ck@compareClusterResult, file = "cortex.comparecluster.csv")
+write.csv(ctx.ck2@compareClusterResult, file = "cortex.comparecluster.simplified.csv")
+```
+
+```{r}
+p <-  dotplot(ctx.ck2,showCategory = 3,by = "count")
+
+p.data <- p$data
+p.data <- p.data[!p.data$Description %in% c("ensheathment of neurons","regulation of neurotransmitter transport","regulation of neurotransmitter levels"),]
+p$data <- p.data
+
+p + geom_point(aes_string(colour = "p.adjust") ) +
+    scale_fill_gradient(low="red", high="blue",
+                           limits = c(0, 0.05))  +
+    labs(size="Count", colour="p.adjust") +
+  theme(panel.grid.minor = element_blank()) #panel.grid.major = element_blank())
+
+dotplot(ctx.ck2,showCategory = 3,by = "count")
+ggsave('./High_resolution/Dotplot.cortex.top3.GO.Count.tiff', device='tiff', dpi=500, 
+       height = 6, width = 10, unit = 'in')
+```
+
+
+
+```{r}
+for ( i in c(0:3)){
+  assign(paste("cluster.hippocampus_",i,".HF_vs_MF.filter.DEG.entrez", sep = ""),
+         bitr(rownames(get(paste("cluster.hippocampus_",i,".HF_vs_MF.filter.DEG", sep = ""))), fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Mm.eg.db"))
+}
+
+hip.GO.compare <- list(hip_0 = cluster.hippocampus_0.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       hip_1 = cluster.hippocampus_1.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       hip_2 = cluster.hippocampus_2.HF_vs_MF.filter.DEG.entrez$ENTREZID,
+                       hip_3 = cluster.hippocampus_3.HF_vs_MF.filter.DEG.entrez$ENTREZID)
+
+hip.ck <- compareCluster(geneCluster = hip.GO.compare, fun = enrichGO,OrgDb="org.Mm.eg.db", ont = "BP")
+hip.ck <- setReadable(hip.ck, OrgDb = org.Mm.eg.db, keyType="ENTREZID")
+
+
+hip.ck <- pairwise_termsim(hip.ck)
+hip.ck1 <- simplify(hip.ck)
+hip.ck2 <- simplify(hip.ck, by = "Count", select_fun = max)
+
+write.csv(hip.ck@compareClusterResult, file = "hippocampus.comparecluster.csv")
+write.csv(hip.ck2@compareClusterResult, file = "hippocampus.comparecluster.simplified.csv")
+```
+
+```{r}
+dotplot(hip.ck2,showCategory = 3,by = "count")
+
+ggsave('./High_resolution/Dotplot.hip.top3.GO.Count.tiff', device='tiff', dpi=500, 
+       height = 6, width = 8, unit = 'in')
+```
+
+
+
+
+
+
+```{r}
+hip.clusters <- unique(merge.obj$hippocampus.cluster.0.1)
+
+# Define a color for each cluster
+hip.cluster_colors <- ifelse(grepl("hippocampus", hip.clusters), 
+                         viridis::viridis(length(hip.clusters)), # replace with the colors of your choice
+                         "grey")
+# Create a named vector for the color palette
+names(hip.cluster_colors) <- hip.clusters
+
+SpatialDimPlot(merge.obj, images = rep.images[1], group.by = "hippocampus.cluster.0.1", cols = hip.cluster_colors)
+
+ggsave('./High_resolution/SpatialDimplot.hippocampus.sub.tiff', device='tiff', dpi=500, 
+       height = 6, width = 8, unit = 'in')
+
+
+
+ctx.clusters <- unique(merge.obj$cortex.cluster.0.3)
+
+# Define a color for each cluster
+ctx.cluster_colors <- ifelse(grepl("0_", ctx.clusters), 
+                         viridis::viridis(length(ctx.clusters)), # replace with the colors of your choice
+                         "grey")
+# Create a named vector for the color palette
+names(ctx.cluster_colors) <- ctx.clusters
+
+
+SpatialDimPlot(merge.obj, images = rep.images[1], group.by = "cortex.cluster.0.3", cols = ctx.cluster_colors)
+
+ggsave('./High_resolution/SpatialDimplot.cortex.sub.tiff', device='tiff', dpi=500, 
+       height = 6, width = 8, unit = 'in')
+
+```
+
+
+
+```{r}
+hip.obj <- subset(merge.obj, subset = hippocampus.cluster.0.1 %in% c("hippocampus_0","hippocampus_1", "hippocampus_2", "hippocampus_3"))
+DimPlot(hip.obj, group.by = "hippocampus.cluster.0.1")
+
+Idents(hip.obj) <- hip.obj$hippocampus.cluster.0.1
+hip.sub.allmarker <- FindAllMarkers(hip.obj, group.by = "hippocampus.cluster.0.1")
+
+
+ctx.obj <- subset(merge.obj, subset = cortex.cluster.0.3 %in% c("0_0","0_1", "0_2", "0_3","0_4","0_5"))
+
+SpatialDimPlot(merge.obj,group.by = "cortex.cluster.0.1",ncol = 2)
+
+Idents(ctx.obj) <- ctx.obj$cortex.cluster.0.3
+ctx.sub.allmarker <- FindAllMarkers(ctx.obj, group.by = "cortex.cluster.0.3")
+```
+
+```{r}
+save.image("temp4.Rdata")
+```
+
+
+```{r}
+hip.sub.allmarker %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10.hip
+
+# top10 <- top10[c(1:30,51:60,31:50),]
+
+DoHeatmap(hip.obj, features = top10.hip$gene,group.by = "hippocampus.cluster.0.1")+
+  scale_fill_gradientn(colors = c("blue", "white", "red"))# + theme(axis.text.y = element_blank())
+
+ggsave('./High_resolution/Heatmap.top10marker.HIP.tiff', device='tiff', dpi=500, 
+       height = 6, width = 8, unit = 'in')
+
+
+
+ctx.sub.allmarker %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10.ctx
+
+# top10 <- top10[c(1:30,51:60,31:50),]
+
+DoHeatmap(ctx.obj, features = top10.ctx$gene,group.by = "cortex.cluster.0.3")+
+  scale_fill_gradientn(colors = c("blue", "white", "red"))# + theme(axis.text.y = element_blank())
+
+ggsave('./High_resolution/Heatmap.top10marker.CTX.tiff', device='tiff', dpi=500, 
+       height = 6, width = 8, unit = 'in')
+```
+
+```{r}
+
+ctx.obj <- NormalizeData(ctx.obj, scale.factor = 10**6)
+ctx.obj <- FindVariableFeatures(ctx.obj, nfeatures = 3000)
+ctx.obj <- ScaleData(ctx.obj, features = rownames(ctx.obj))
+ctx.obj <- RunPCA(ctx.obj, npcs = 50, features = rownames(ctx.obj))
+ElbowPlot(ctx.obj,ndims = 50) + geom_hline(yintercept=3)+
+   scale_y_continuous(breaks = c(3,5,10,15))
+
+ctx.obj <- RunHarmony(ctx.obj,"orig.ident", dims.use = 1:15 ,assay.use = "Spatial", reduction = "pca")
+ElbowPlot(ctx.obj,ndims = 50,reduction = "harmony") + geom_hline(yintercept=3)+
+   scale_y_continuous(breaks = c(3,5,10,15))
+
+ctx.obj <- RunUMAP(ctx.obj, dims = 1:15,reduction = "harmony")
+
+```
+
+
+```{r}
+DimPlot(ctx.obj, split.by = "orig.ident", ncol = 2)
+DimPlot(ctx.obj, group.by = "orig.ident")
+```
+
+
+```{r}
+
+ctx.obj <- FindNeighbors(ctx.obj, reduction = "harmony", dims = 1:15)
+ctx.obj <- FindClusters(ctx.obj, resolution = 0.05)
+ctx.obj <- FindClusters(ctx.obj, resolution = 0.15)
+ctx.obj <- FindClusters(ctx.obj, resolution = 0.25)
+ctx.obj <- FindClusters(ctx.obj, resolution = 0.3)
+```
+
+
+```{r}
+SpatialDimPlot(ctx.obj, group.by = "Spatial_snn_res.0.05", ncol = 2,label = T)
+SpatialDimPlot(ctx.obj, group.by = "Spatial_snn_res.0.15", ncol = 2,label = F)
+ggsave('./High_resolution/sub.0.15.CTX.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+SpatialDimPlot(ctx.obj, group.by = "Spatial_snn_res.0.25", ncol = 2,label = F)
+ggsave('./High_resolution/sub.0.25.CTX.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+SpatialDimPlot(ctx.obj, group.by = "Spatial_snn_res.0.3", ncol = 2,label = F)
+ggsave('./High_resolution/sub.0.3.CTX.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+DimPlot(ctx.obj, group.by = "Spatial_snn_res.0.15")
+ggsave('./High_resolution/umap.sub.0.15.CTX.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+DimPlot(ctx.obj, group.by = "Spatial_snn_res.0.25")
+ggsave('./High_resolution/umap.sub.0.25.CTX.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+DimPlot(ctx.obj, group.by = "Spatial_snn_res.0.3")
+ggsave('./High_resolution/umap.sub.0.3.CTX.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+```{r}
+hip.obj <- NormalizeData(hip.obj, scale.factor = 10**6)
+hip.obj <- FindVariableFeatures(hip.obj, nfeatures = 3000)
+hip.obj <- ScaleData(hip.obj, features = rownames(hip.obj))
+hip.obj <- RunPCA(hip.obj, npcs = 50, features = rownames(hip.obj))
+ElbowPlot(hip.obj,ndims = 50) + geom_hline(yintercept=3)+
+   scale_y_continuous(breaks = c(3,5,10,15))
+
+hip.obj <- RunHarmony(hip.obj,"orig.ident", dims.use = 1:10 ,assay.use = "Spatial", reduction = "pca")
+ElbowPlot(hip.obj,ndims = 50,reduction = "harmony") + geom_hline(yintercept=3)+
+   scale_y_continuous(breaks = c(3,5,10,15))
+
+hip.obj <- RunUMAP(hip.obj, dims = 1:15,reduction = "harmony")
+
+```
+
+
+```{r}
+DimPlot(hip.obj, split.by = "orig.ident", ncol = 2)
+DimPlot(hip.obj, group.by = "orig.ident")
+```
+
+
+```{r}
+
+hip.obj <- FindNeighbors(hip.obj, reduction = "harmony", dims = 1:15)
+
+hip.obj <- FindClusters(hip.obj, resolution = 0.05)
+hip.obj <- FindClusters(hip.obj, resolution = 0.1)
+hip.obj <- FindClusters(hip.obj, resolution = 0.15)
+hip.obj <- FindClusters(hip.obj, resolution = 0.25)
+hip.obj <- FindClusters(hip.obj, resolution = 0.5)
+```
+
+
+```{r}
+
+
+
+SpatialDimPlot(hip.obj, group.by = "Spatial_snn_res.0.1", ncol = 2,label = T, pt.size.factor = 4)
+ggsave('./High_resolution/sub.0.hip.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+SpatialDimPlot(hip.obj, group.by = "Spatial_snn_res.0.15", ncol = 2,label = T, pt.size.factor = 4)
+ggsave('./High_resolution/sub.0.15.hip.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+
+SpatialDimPlot(hip.obj, group.by = "Spatial_snn_res.0.5", ncol = 2,label = F, pt.size.factor = 4)
+ggsave('./High_resolution/sub.0.5.hip.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+
+
+
+DimPlot(hip.obj, group.by = "Spatial_snn_res.0.1")
+ggsave('./High_resolution/umap.sub.0.11.hip.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+DimPlot(hip.obj, group.by = "Spatial_snn_res.0.15")
+ggsave('./High_resolution/umap.sub.0.15.hip.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+DimPlot(hip.obj, group.by = "Spatial_snn_res.0.5")
+ggsave('./High_resolution/umap.sub.0.5.hip.tiff', device='tiff', dpi=500, 
+       height = 8, width = 8, unit = 'in')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,187 @@
+
+
+
+
+```{r}
+library(Seurat)
+library(stringr)
+library(Matrix)
+library(BiocManager)
+library(future)
+library(dplyr)
+library(clustree)
+library(SeuratData)
+library(future)
+library(SeuratDisk)
+
+library(clusterProfiler)
+library(ReactomePA)
+library(ggplot2)
+library(ggpubr)
+
+library(tidyverse)
+
+library(EnsDb.Mmusculus.v79) 
+library(Signac)
+library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+library(harmony)
+
+library(clusterProfiler)
+library(DOSE)
+library(scRNAtoolVis)
+```
+
+
+```{r}
+sample.dirs <- c("./HF_rep1/outs/","./HF_rep3.outs/",
+                 "./MF_rep2/outs/", "./MF_rep3.outs/")
+sample.names <- c( "HF.rep1", "HF.rep3", "MF.rep2", "MF.rep3")
+```
+
+
+```{r}
+for (i in 1:4){
+  assign(paste0(sample.names[i],".sample"),
+         Read10X(data.dir = paste0(sample.dirs[i],"filtered_feature_bc_matrix/")))
+}
+```
+
+```{r}
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
+seqlevelsStyle(annotations) <- 'UCSC'
+genome(annotations) <- "mm10"
+```
+
+
+
+```{r}
+for (i in 1:4){
+  assign(paste0(sample.names[i],".obj"),
+    CreateSeuratObject(counts = get(paste0(sample.names[i],".sample"))$`Gene Expression`, 
+                       project = sample.names[i]))
+  }
+```
+
+
+
+```{r read in peak sets and combined peaks}
+
+for (i in 1:4) {
+  assign(paste0(sample.names[i],".feature.mtx"),
+         read.table(file = paste0(sample.dirs[i],"atac_peaks.bed"),
+                    col.names = c("chr", "start", "end")))
+}
+
+
+for (i in 1:4) {
+  assign(paste0(sample.names[i],".genomic.ranges"),
+         makeGRangesFromDataFrame(get(paste0(sample.names[i],".feature.mtx"))))
+}
+
+genomic.ranges.vars <- ls(envir = .GlobalEnv, pattern = ".genomic.ranges$")
+
+combined.peaks <- GenomicRanges::reduce(x = c(get(genomic.ranges.vars[1]), get(genomic.ranges.vars[2]),
+                               get(genomic.ranges.vars[3]), get(genomic.ranges.vars[4])))
+
+
+peakwidths <- width(combined.peaks)
+```
+
+
+
+```{r}
+for (i in 1:4) {
+  atac.count <- get(paste0(sample.names[i],".sample"))$Peaks
+
+  frags <- CreateFragmentObject(path = paste0(sample.dirs[i],"atac_fragments.tsv.gz"),
+                                cells = colnames(atac.count))
+  fragment.mtx <- FeatureMatrix(fragments = frags,
+                       features = combined.peaks,
+                       cells = colnames(atac.count))
+  
+  chrom_assay <- CreateChromatinAssay(
+    counts = fragment.mtx,
+    fragments =  frags,
+    genome = 'mm10',
+    annotation = annotations)
+  
+  
+  assign(paste0("atac.",sample.names[i],".obj"),
+         CreateSeuratObject(chrom_assay, assay = "ATAC", project = sample.names[i]))
+  }
+```
+
+
+
+
+```{r}
+rna.merge.obj <- merge(HF.rep1.obj, c(HF.rep3.obj, MF.rep2.obj,MF.rep3.obj),
+                           add.cell.ids = sample.names)
+
+atac.merge.obj <- merge(atac.HF.rep1.obj, c(atac.HF.rep3.obj, atac.MF.rep2.obj, atac.MF.rep3.obj), 
+                            add.cell.ids = sample.names)
+```
+
+
+
+```{r}
+save(rna.merge.obj, file = "new.raw.rna.merge.obj.Rdata")
+save(atac.merge.obj, file = "new.raw.atac.merge.obj.Rdata")
+```
+
+
+
+
+
+
+
+```{r}
+# List of samples to process
+samples <- c("HF.rep1", "HF.rep3", "MF.rep2", "MF.rep3")
+
+for (sample in samples) {
+  # Process Gene Expression data
+  expression_matrix <- get(paste0(sample, ".sample"))$`Gene Expression`
+  barcodes <- colnames(expression_matrix)
+  features <- rownames(expression_matrix)
+  
+  # Create directories if they don't exist
+  dir.create(paste0("./Processed_Data/", sample, "/RNA"), recursive = TRUE, showWarnings = FALSE)
+  
+  # Save the matrix in Matrix Market format
+  writeMM(expression_matrix, file = paste0("./Processed_Data/", sample, "/RNA/matrix.mtx"))
+  write.table(barcodes, file = paste0("./Processed_Data/", sample, "/RNA/barcodes.tsv"), 
+              sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+  write.table(features, file = paste0("./Processed_Data/", sample, "/RNA/features.tsv"), 
+              sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+  
+  # Gzip the files
+  system(paste0("gzip ./Processed_Data/", sample, "/RNA/matrix.mtx"))
+  system(paste0("gzip ./Processed_Data/", sample, "/RNA/barcodes.tsv"))
+  system(paste0("gzip ./Processed_Data/", sample, "/RNA/features.tsv"))
+  
+  # Process ATAC data
+  expression_matrix <- get(paste0(sample, ".sample"))$Peaks
+  barcodes <- colnames(expression_matrix)
+  features <- rownames(expression_matrix)
+  
+  # Create directories if they don't exist
+  dir.create(paste0("./Processed_Data/", sample, "/ATAC"), recursive = TRUE, showWarnings = FALSE)
+  
+  # Save the matrix in Matrix Market format
+  writeMM(expression_matrix, file = paste0("./Processed_Data/", sample, "/ATAC/matrix.mtx"))
+  write.table(barcodes, file = paste0("./Processed_Data/", sample, "/ATAC/barcodes.tsv"), 
+              sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+  write.table(features, file = paste0("./Processed_Data/", sample, "/ATAC/features.tsv"), 
+              sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+  
+  # Gzip the files
+  system(paste0("gzip ./Processed_Data/", sample, "/ATAC/matrix.mtx"))
+  system(paste0("gzip ./Processed_Data/", sample, "/ATAC/barcodes.tsv"))
+  system(paste0("gzip ./Processed_Data/", sample, "/ATAC/features.tsv"))
+}
+
+```
+

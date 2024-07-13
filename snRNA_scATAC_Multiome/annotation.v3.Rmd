@@ -1,0 +1,965 @@
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(clustree)
+library(readxl)
+library(scales)
+
+library(Signac)
+library(biovizBase)
+library(EnsDb.Mmusculus.v79) 
+library(BSgenome.Mmusculus.UCSC.mm10)
+
+library(future)
+library(clusterProfiler)
+library(enrichplot)
+library(DOSE)
+
+library(ComplexHeatmap)
+library(scRNAtoolVis)
+
+library(tackPlotR)
+library(ggsci)
+library(rtracklayer)
+
+library(circlize)
+
+```
+
+```{r}
+load("merge.obj.final.Rdata")
+```
+
+```{r}
+DimPlot(merge.obj, reduction = "atacUMAP", label = F, repel = TRUE, group.by = "ATAC_snn_res.0.1")
+ggsave(paste("./Figure/Dimplot.atac.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.1")
+ggsave(paste("./Figure/Dimplot.atac.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+DimPlot(merge.obj, reduction = "RNAUMAP", label = F, repel = TRUE, group.by = "RNA_snn_res.0.05")
+ggsave(paste("./Figure/Dimplot.rna.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE, group.by = "RNA_snn_res.0.05")
+ggsave(paste("./Figure/Dimplot.rna.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = F, repel = TRUE, group.by = "wsnn_res.0.075")
+ggsave(paste("./Figure/Dimplot.wnn.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "wsnn_res.0.075")
+ggsave(paste("./Figure/Dimplot.wnn.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+```
+
+```{r marker}
+VlnPlot(merge.obj,
+        features = c('Rbfox3',# Neurons
+                     'Slc17a7', "Slc17a6", # Exc
+                     'Gad1', 'Gad2',# Inh
+                     "Aldoc","Gja1","Aqp4", # Astrocytes
+                     "Pdgfra","Sox10","Olig1","Mog","Enpp6", # Oligo
+                     "Ptprc","Cx3cr1","Ctss",# Microglial,
+                     "Vtn","Col1a1"), # Endothelial
+        flip = T,stack = T,group.by = "seurat_clusters")
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "RNA"
+DimPlot(merge.obj, reduction = "wnn.umap", label = TRUE, repel = TRUE)
+
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Aqp4", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Cspg4", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Sox10", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Ptprc", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Gad1", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Gad2", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Slc17a7", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Slc17a6", label = TRUE, repel = TRUE)
+FeaturePlot(merge.obj, reduction = "wnn.umap", features = "Rbfox3", label = TRUE, repel = TRUE)
+
+```
+
+```{r cell type annotation }
+
+table(merge.obj$seurat_clusters)
+write.csv(table(merge.obj$seurat_clusters), file = "./DEG_tables/cluster.number.csv")
+
+
+
+cluster.n <- seq(0,12,1)
+celltype <- c("Exc", # 0
+              "Exc","Ast","Neuron","OPC","Inh", # 1-5
+              "ODC","MG","Exc","Exc","remove", # 6-10
+               "remove","remove") # 11-12
+
+cluster_ct.df <- data.frame(cluster = cluster.n,
+                            celltype = celltype)
+
+merge.obj$celltype.crude <- cluster_ct.df$celltype[match(merge.obj$seurat_clusters,cluster_ct.df$cluster)]
+merge.obj$celltype.crude <- factor(merge.obj$celltype.crude, levels = c("Neuron","Exc","Inh","Ast","OPC","ODC","MG","remove"))
+
+
+
+celltype <- c("Exc", # 0
+              "Exc","Ast","Exc","OPC","Inh", # 1-5
+              "ODC","Exc","MG","Exc","remove", # 6-10
+               "remove","remove") # 11-12
+
+cluster_ct.df <- data.frame(cluster = cluster.n,
+                            celltype = celltype)
+
+merge.obj$celltype.crude.v2 <- cluster_ct.df$celltype[match(merge.obj$seurat_clusters,cluster_ct.df$cluster)]
+merge.obj$celltype.crude.v2 <- factor(merge.obj$celltype.crude.v2, levels = c("Exc","Inh","Ast","OPC","ODC","MG","remove"))
+
+
+celltype2 <- c("Exc1", # 0
+              "Exc2","Ast","Neuron","OPC","Inh", # 1-5
+              "ODC","Exc3","MG","Exc4","remove", # 6-10
+              "remove","remove") # 11-12
+
+cluster_ct.df2 <- data.frame(cluster = cluster.n,
+                            celltype = celltype2)
+
+merge.obj$celltype.detailed <- cluster_ct.df2$celltype[match(merge.obj$seurat_clusters,cluster_ct.df2$cluster)]
+merge.obj$celltype.detailed <- factor(merge.obj$celltype.detailed, levels = c("Neuron","Exc1","Exc2","Exc3","Exc4","Exc5","Inh",
+                                                                              "Ast","OPC","ODC","MG","remove"))
+
+```
+
+```{r}
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = F, repel = TRUE, group.by = "celltype.crude")
+ggsave(paste("./Figure/Dimplot.wnn.celltype.crude.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "celltype.crude")
+ggsave(paste("./Figure/Dimplot.wnn.celltype.crude.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = F, repel = TRUE, group.by = "celltype.crude.v2")
+ggsave(paste("./Figure/Dimplot.wnn.celltype.crude.v2.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "celltype.crude.v2")
+ggsave(paste("./Figure/Dimplot.wnn.celltype.crude.v2.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = F, repel = TRUE, group.by = "celltype.detailed")
+ggsave(paste("./Figure/Dimplot.wnn.celltype.detailed.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "celltype.detailed")
+ggsave(paste("./Figure/Dimplot.wnn.celltype.detailed.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+```{r}
+DimPlot(merge.obj, reduction = "wnn.umap", label = TRUE, repel = TRUE)
+DimPlot(merge.obj, reduction = "wnn.umap", group.by = "celltype.crude", label = TRUE, repel = TRUE)
+DimPlot(merge.obj, reduction = "wnn.umap", group.by = "celltype.crude.v2", label = TRUE, repel = TRUE)
+DimPlot(merge.obj, reduction = "wnn.umap", group.by = "celltype.detailed", label = TRUE, repel = TRUE)
+```
+
+```{r}
+save(merge.obj, file = "merge.obj.annotated.Rdata")
+```
+
+```{r}
+merge.obj <- subset(merge.obj, subset = celltype.detailed != "remove")
+```
+
+```{r}
+merge.obj$celltype.detailed <- factor(merge.obj$celltype.detailed, levels = c("Neuron","Exc1","Exc2","Exc3","Exc4","Inh",
+                                                                              "Ast","OPC","ODC","MG"))
+
+merge.obj$celltype.crude <- factor(merge.obj$celltype.crude, levels = c("Neuron","Exc","Inh","Ast","OPC","ODC","MG"))
+
+merge.obj$celltype.crude.v2 <- factor(merge.obj$celltype.crude.v2, levels = c("Exc","Inh","Ast","OPC","ODC","MG"))
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "RNA"
+merge.obj <- JoinLayers(merge.obj)
+
+```
+
+```{r}
+Idents(merge.obj) <- "celltype.crude.v2"
+celltype.markers <- FindAllMarkers(merge.obj,  min.pct = 0.25, logfc.threshold = 0.25, only.pos = T)
+write.csv(celltype.markers, file = "./DEG_tables/celltype.crude.marker.csv")
+
+top_10.RNA.marker <- celltype.markers %>% group_by(cluster)  %>% top_n(10, avg_log2FC)
+
+```
+
+```{r extract color}
+p <- DimPlot(merge.obj, reduction = "wnn.umap", label = F, repel = TRUE, group.by = "celltype.crude.v2")
+plot_data <- ggplot_build(p)$data
+unique(plot_data[[1]]$colour)
+
+table(plot_data[[1]]$colour,plot_data[[1]]$group)
+
+```
+
+```{r}
+tiff(filename = paste("./Figure/htmp.subtype.top10.rna.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,
+               markerGene = top_10.RNA.marker$gene, 
+               gene.order = top_10.RNA.marker$gene,
+               annoCol = T,
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF",
+                           "#F564E3"))
+dev.off()
+
+tiff(filename = paste("./Figure/htmp.crude.top10.rna.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,
+               markerGene = top_10.RNA.marker$gene, 
+               gene.order = top_10.RNA.marker$gene,
+               annoCol = T,
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF",
+                           "#F564E3"))
+dev.off()
+```
+
+```{r}
+annoGene <- c('Slc17a7',
+             'Gad2',
+             "Aqp4", # Astrocytes
+             "Cspg4", # oligo
+             "Mog",
+             "Ptprc")
+
+tiff(filename = paste("./Figure/htmp.crude.rna.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,
+               markerGene = celltype.markers[celltype.markers$p_val_adj < 0.05,]$gene, 
+               gene.order = celltype.markers[celltype.markers$p_val_adj < 0.05,]$gene,
+               annoCol = T,
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF",
+                           "#F564E3"),
+               showRowNames = F,
+               markGenes = annoGene)
+dev.off()
+
+```
+
+```{r Gene Activity}
+
+DefaultAssay(merge.obj) <- "ATAC"
+gene.activities <- GeneActivity(merge.obj)
+
+merge.obj[['Gene_Activity']] <- CreateAssayObject(counts = gene.activities)
+
+merge.obj <- NormalizeData(object = merge.obj,assay = 'Gene_Activity',
+                           normalization.method = 'LogNormalize',
+                           scale.factor = median(merge.obj$nCount_Gene_Activity))
+
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "Gene_Activity"
+
+Idents(merge.obj) <- "celltype.crude.v2"
+celltype.ga.markers <- FindAllMarkers(merge.obj,  min.pct = 0.25, logfc.threshold = 0.25, only.pos = T)
+
+top_10.GA.marker <- celltype.ga.markers %>% group_by(cluster)  %>% top_n(10, avg_log2FC)
+```
+
+```{r}
+Idents(merge.obj) <- "celltype.crude.v2"
+DefaultAssay(merge.obj) <- "Gene_Activity"
+
+tiff(filename = paste("./Figure/htmp.subtype.top10.geneactivity.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,assa = "Gene_Activity",
+               markerGene = top_10.GA.marker$gene, 
+               gene.order = top_10.GA.marker$gene,
+               annoCol = T,
+               htCol = c("#482e6d","#5bae86","#efe62f"),
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF",
+                           "#F564E3"))
+dev.off()
+
+Idents(merge.obj) <- "celltype.crude.v2"
+tiff(filename = paste("./Figure/htmp.crude.top10.geneactivity.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,assa = "Gene_Activity",
+               markerGene = top_10.GA.marker$gene, 
+               gene.order = top_10.GA.marker$gene,
+               annoCol = T,
+               htCol = c("#482e6d","#5bae86","#efe62f"),
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF",
+                           "#F564E3"))
+dev.off()
+```
+
+```{r}
+Idents(merge.obj) <- "celltype.crude.v2"
+tiff(filename = paste("./Figure/htmp.crude.geneactivity.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,assa = "Gene_Activity",
+               markerGene = celltype.ga.markers[celltype.ga.markers$p_val_adj < 0.05,]$gene, 
+               gene.order = celltype.ga.markers[celltype.ga.markers$p_val_adj < 0.05,]$gene,
+               annoCol = T,
+               htCol = c("#482e6d","#5bae86","#efe62f"),
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF",
+                           "#F564E3"),
+               showRowNames = F,
+               markGenes = annoGene)
+dev.off()
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "RNA"
+VlnPlot(merge.obj,
+        features = c('Slc17a7',
+                     'Gad2',
+                     "Aqp4", # Astrocytes
+                     "Cspg4", # oligo
+                     "Mog",
+                     "Ptprc"), # endothelial
+        flip = T,stack = T, group.by = "celltype.crude.v2") + NoLegend()
+
+ggsave(paste("./Figure/Vlnplot.celltype.marker.tiff", sep = ""), device='tiff', dpi=300, height = 1000, width = 1000, unit = 'px')
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "ATAC"
+Idents(merge.obj) <- "celltype.crude.v2"
+
+p <- CoveragePlot(
+    object = merge.obj,
+    region = c('Slc17a7',
+               'Gad2',
+               "Aqp4", # Astrocytes
+               "Cspg4", # oligo
+               "Mog",
+               "Ptprc"),
+    extend.upstream = 3000,
+    extend.downstream = 3000,
+    window = 1500, # key to adjust peak before=1000
+    tile.size = 1000,
+    tile.cells = 1000,
+    annotation = FALSE,
+    peaks = FALSE,
+    ncol = 3)
+
+ggsave(paste("./Figure/track.celltype.withminimal.1500.marker.tiff", sep = ""), device='tiff',
+       dpi=300, height = 1500, width = 1500, unit = 'px')
+
+
+for (i in 1:6) {
+  assign(paste0("p",i),
+         p[[i]]+
+  theme(
+    axis.text=element_text(size= 0),
+    # axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_blank(),  # Remove x-axis title
+    axis.title.y = element_blank(),  # Remove y-axis title
+    axis.text.x = element_blank(),  # Remove x-axis text
+    axis.text.y = element_blank(),  # Remove y-axis text
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 0,fill = NA)))
+}
+
+
+p.test2 <- p1 + theme(
+  axis.title.x = element_blank(),  # Remove x-axis title
+  axis.title.y = element_blank(),  # Remove y-axis title
+  axis.text.x = element_blank(),  # Remove x-axis text
+  axis.text.y = element_blank(),  # Remove y-axis text
+  strip.text.x = element_blank(),  # Removing facet strip text (top of each facet)
+  strip.text.y = element_blank(),  # Ensuring no strip text on the y axis
+  axis.ticks.y = element_blank(),  # Remove the Y-axis ticks
+  axis.line.y = element_blank(),  # Remove the Y-axis line
+  panel.spacing = unit(0, "lines")
+)
+
+
+for (i in 1:6) {
+  assign(paste0("p",i,".mod"),
+         ggplot(get(paste0("p",i))$data, aes(x = position, y = coverage, fill = group)) +
+           geom_area(stat = "identity") +  # Adding the area plot layer
+            facet_wrap(~group,  ncol = 1) +  # Faceting by 'group' with free y scales
+            theme_minimal() +  # Starting with a minimal theme
+            theme(
+              axis.title.x = element_blank(),  # Remove x-axis title
+              axis.title.y = element_blank(),  # Remove y-axis title
+              axis.text.x = element_blank(),  # Remove x-axis text
+              axis.text.y = element_blank(),  # Remove y-axis text
+              axis.ticks.y = element_blank(),  # Remove the Y-axis ticks
+              strip.text.x = element_blank(),  # Removing facet strip text (top of each facet)
+              strip.text.y = element_blank(),  # Ensuring no strip text on the y axis
+              panel.spacing = unit(0, "lines"),  # Remove space between facets
+              panel.background = element_rect(fill = "white"),  # Change background to white
+              panel.grid.minor = element_blank(),  # Remove minor grid lines
+              panel.grid.major = element_blank(),  # Remove major grid lines
+              panel.border = element_rect(size = 1, fill = NA),  # Panel border
+              # plot.margin = unit(c(-1, -1, -1, -1), "lines"),  # Remove plot margins
+              # plot.background = element_rect(color = "black", size = 1, fill = NA),
+              legend.position = "none"  # Remove the legend
+  ))
+}
+
+
+
+plot.list <- list()
+
+for (i in 1:6) {
+  plot.list[[i]] <- get(paste0("p",i,".mod"))
+}
+
+wrap_plots(plot.list,ncol = 6)&
+  theme(plot.margin = unit(c(0,0,0,0),"cm"),
+        panel.spacing = unit(0, "lines"))
+
+
+ggsave(paste("./Figure/trackplot.celltype.withminimal.1500.marker.tiff", sep = ""), device='tiff',
+       dpi=300, height = 1500, width = 1500, unit = 'px')
+
+
+CoveragePlot(
+    object = merge.obj,
+    region = c('Slc17a7',
+               'Gad2',
+               "Aqp4", # Astrocytes
+               "Cspg4", # oligo
+               "Mog",
+               "Ptprc"),
+    extend.upstream = 3000,
+    extend.downstream = 3000,
+    window = 1500, # key to adjust peak before=1000
+    tile.size = 1000,
+    tile.cells = 1000,
+    annotation = T,
+    peaks = FALSE,
+    ncol = 6)
+
+ggsave(paste("./Figure/track.celltype.v2.withminimal.1500.marker.tiff", sep = ""), device='tiff',
+       dpi=300, height = 1500, width = 6000, unit = 'px')
+```
+
+```{r}
+annoGene <- c('Slc17a7',
+             'Gad2',
+             "Aqp4", # Astrocytes
+             "Cspg4", # oligo
+             "Mog",
+             "Ptprc")
+
+DefaultAssay(merge.obj) <- "Gene_Activity"
+tiff(filename = paste("./Figure/htmp.subtype.all.activity.marker.tiff", sep = ""), res = 100, height = 1000, width = 500)
+AverageHeatmap(object = merge.obj,assays = "Gene_Activity",
+               markerGene = gene_activity.marker$gene,
+               gene.order = gene_activity.marker$gene,
+               annoCol = TRUE,
+               myanCol = c("#F8766D","#B79F00","#00BA38","#00BFC4","#619CFF","#F564E3"),
+               showRowNames = F,
+               htCol = c("#482e6d","#5bae86","#efe62f"),
+               markGenes = annoGene)
+
+dev.off()
+```
+
+```{r}
+save(merge.obj, file = "celltype.completed.merge.obj.Rdata")
+```
+
+```{r AUGUS}
+aug_auc <- aug$AUC
+aug_auc <- as.data.frame(aug_auc)
+
+merge.obj$AUGUS <- 0
+
+
+for (i in 1:12){
+  merge.obj$AUGUS[grep(aug_auc$cell_type[i], merge.obj$celltype.detailed)] <- aug_auc$auc[i]
+}
+
+FeaturePlot(merge.obj, features = "AUGUS", pt.size = 1, cols = c("grey", "red"),reduction = "wnn.umap")
+
+ggsave(paste("./Figure/featureplot.AUGUS.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+```{r within celltype condition comparison}
+
+
+DefaultAssay(merge.obj) <- "RNA"
+
+merge.obj$condition <- 0
+merge.obj$condition[grep("MF", merge.obj$orig.ident)] <- "MF"
+merge.obj$condition[grep("HF", merge.obj$orig.ident)] <- "HF"
+
+merge.obj$combined_condition <- paste(merge.obj$celltype.crude.v2,merge.obj$condition,sep = ".")
+
+
+Idents(merge.obj) <- "celltype.crude.v2" # celltype.detailed celltype.crude.v2
+
+for(ct in unique(merge.obj$celltype.crude.v2)){# celltype.detailed celltype.crude.v2
+      marker <- FindMarkers(merge.obj,
+                           ident.1 = "HF", ident.2 = "MF", # HF vs MF
+                           group.by = 'condition',
+                           subset.ident = ct,
+                           pseudocount.use = 0.001)
+      
+      
+      avg <- as.data.frame(AverageExpression(merge.obj,assays = "RNA",
+                              features = rownames(marker),group.by = "combined_condition"))
+      
+      marker$mf_avg <- avg[,paste("RNA.",ct,".MF",sep = "")]
+      marker$hf_avg <- avg[,paste("RNA.",ct,".HF",sep = "")]
+      
+      marker$celltype <- ct
+      
+      marker$gene <- rownames(marker)
+      marker$regulation <- ifelse(marker$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+
+      marker$sig <- "not_sig"
+      marker$sig[abs(marker$avg_log2FC) > log2(1.2) & marker$p_val_adj < 0.05] <- paste(ct,"sig",sep = "_")
+      marker$sig <- factor(marker$sig, levels = c("not_sig",paste(ct,"sig",sep = "_")))
+      
+      assign(paste(ct,"marker",sep = "."), marker)
+      
+      # write.csv(marker, file = paste0("./DEG_tables/",paste(ct,"marker.csv", sep = ".")))
+      }
+
+```
+
+```{r}
+celltype <- levels(merge.obj$celltype.detailed)
+
+bar.df <- data.frame(CellType = celltype,
+                     UP = rep(0,length(celltype),
+                     DOWN = rep(0,length(celltype))))
+
+
+
+for (ct in celltype) {
+  marker <- get(paste0(ct,".marker"))
+  bar.df$UP[bar.df$CellType == ct] <- sum(marker$regulation == "Up" & marker$sig != "not_sig")
+  bar.df$DOWN[bar.df$CellType == ct] <- sum(marker$regulation == "Down" & marker$sig != "not_sig")
+}
+
+```
+
+```{r}
+bar.plot.tb <- data.frame(celltype = c(bar.df$CellType, bar.df$CellType),
+                          number = c(bar.df$UP, bar.df$DOWN),
+                          direct = c(rep("up",length(bar.df$CellType)), rep("down",length(bar.df$CellType))))
+
+bar.plot.tb[bar.plot.tb$direct == "down",]$number <- -bar.plot.tb[bar.plot.tb$direct == "down",]$number
+
+
+bar.plot.tb$celltype <- factor(bar.plot.tb$celltype, levels = celltype)
+
+ggplot(bar.plot.tb, aes(x = celltype, y = number, fill = direct)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = i, y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(number)), position=position_dodge(width=0), 
+            hjust= ifelse(bar.plot.tb$direct == 'up', 0.5, 0.5),
+            vjust = ifelse(bar.plot.tb$direct == 'up', -0.5, 1.5),
+            size=5) +
+  scale_fill_manual(values = c("up" = "red", "down" = "blue"))+
+  theme(
+    axis.text=element_text(size=10),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+# ggsave(paste("./Figure/barplot.celltype.deg.1.2fc.padj.tiff", sep = ""), device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+ggsave(paste("./Figure/barplot.celltype.sub.deg.1.2fc.padj.tiff", sep = ""), device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+
+# ggsave(paste("./Figure/barplot.celltype.merge.deg.1.2fc.padj.tiff", sep = ""), device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+# ggsave(paste("./Figure/barplot.celltype.merge.sub.deg.1.2fc.padj.tiff", sep = ""), device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+```
+
+```{r}
+library(future)
+plan()
+plan("multicore", workers = 8)
+
+options(future.globals.maxSize = 8 * 1024**3)
+```
+
+```{r DAR}
+DefaultAssay(merge.obj) <- "ATAC"
+
+Idents(merge.obj) <- "celltype.detailed"
+
+for(ct in unique(merge.obj$celltype.detailed)){
+      marker <- FindMarkers(merge.obj,
+                           ident.1 = "HF", ident.2 = "MF", # HF vs MF
+                           group.by = 'condition',
+                           subset.ident = ct,
+                           test.use = 'LR',
+                           min.pct = 0.1,
+                           latent.vars = 'nCount_ATAC')
+      
+      
+      # avg <- as.data.frame(AverageExpression(merge.obj,assays = "RNA",
+      #                         features = rownames(marker),group.by = "combined_condition"))
+      # 
+      # marker$mf_avg <- avg[,paste("RNA.",ct,".MF",sep = "")]
+      # marker$hf_avg <- avg[,paste("RNA.",ct,".HF",sep = "")]
+      
+      marker$celltype <- ct
+      
+      marker$gene <- rownames(marker)
+      marker$regulation <- ifelse(marker$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+
+      marker$sig <- "not_sig"
+      marker$sig[abs(marker$avg_log2FC) > log2(1.2) & marker$p_val_adj < 0.05] <- paste(ct,"sig",sep = "_")
+      marker$sig <- factor(marker$sig, levels = c("not_sig",paste(ct,"sig",sep = "_")))
+      
+      assign(paste(ct,"atac.marker",sep = "."), marker)
+      
+      # write.csv(marker, file = paste0("./DEG_tables/",paste(ct,"atac.marker.csv", sep = ".")))
+      }
+```
+
+```{r}
+celltype <- levels(merge.obj$celltype.detailed)
+
+bar.df <- data.frame(CellType = celltype,
+                     UP = rep(0,length(celltype),
+                     DOWN = rep(0,length(celltype))))
+
+
+
+for (ct in celltype) {
+  marker <- get(paste0(ct,".atac.marker"))
+  bar.df$UP[bar.df$CellType == ct] <- sum(marker$regulation == "Up" & marker$sig != "not_sig")
+  bar.df$DOWN[bar.df$CellType == ct] <- sum(marker$regulation == "Down" & marker$sig != "not_sig")
+}
+```
+
+```{r}
+bar.plot.tb <- data.frame(celltype = c(bar.df$CellType, bar.df$CellType),
+                          number = c(bar.df$UP, bar.df$DOWN),
+                          direct = c(rep("up",length(bar.df$CellType)), rep("down",length(bar.df$CellType))))
+
+bar.plot.tb[bar.plot.tb$direct == "down",]$number <- -bar.plot.tb[bar.plot.tb$direct == "down",]$number
+
+
+bar.plot.tb$celltype <- factor(bar.plot.tb$celltype, levels = celltype)
+
+ggplot(bar.plot.tb, aes(x = celltype, y = number, fill = direct)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = i, y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(number)), position=position_dodge(width=0), 
+            hjust= ifelse(bar.plot.tb$direct == 'up', 0.5, 0.5),
+            vjust = ifelse(bar.plot.tb$direct == 'up', -0.5, 1.5),
+            size=5) +
+  scale_fill_manual(values = c("up" = "red", "down" = "blue"))+
+  theme(
+    axis.text=element_text(size=10),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA))
+
+# ggsave(paste("./Figure/barplot.celltype.merge.dar.1.2fc.padj.tiff", sep = ""), device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+ggsave(paste("./Figure/barplot.celltype.merge.sub.dar.1.2fc.padj.tiff", sep = ""), device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+```
+
+```{r}
+# List all variables ending with ".marker"
+variable_names <- ls(pattern="\\.marker$")
+
+# Retrieve the variables using mget
+variables <- mget(variable_names)
+
+# Save the variables to a file
+save(list=variable_names, file="markers.RData")
+
+```
+
+```{r}
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(ChIPseeker)
+```
+
+```{r annotate the atac}
+
+# detailed 
+peak_coordinates <- granges(merge.obj[['ATAC']])
+annotated_peaks <- annotatePeak(peak_coordinates, TxDb=TxDb.Mmusculus.UCSC.mm10.knownGene)
+
+df_annotation <- as.data.frame(annotated_peaks)
+rownames(df_annotation) <- paste0(df_annotation$seqnames, "-", df_annotation$start, "-", df_annotation$end)
+
+df_annotation$anno_simp <- gsub("\\(.*?\\)", "", df_annotation$annotation)
+df_annotation$anno_simp <- gsub("\\s+$", "", df_annotation$anno_simp)
+
+df_annotation <- df_annotation[df_annotation$anno_simp == ""]
+```
+
+```{r}
+library(annotatr)
+```
+
+```{r signac annotation}
+biltin_annot <- builtin_annotations()
+mm10_builtin_annot <- biltin_annot[grep("mm10",biltin_annot)]
+
+mm10_annotations <- build_annotations(genome = 'mm10', annotations = mm10_builtin_annot)
+
+peak_annotation <- annotate_regions(regions = peak_coordinates,
+                                        annotations = mm10_annotations)
+df_dm_annotated <- data.frame(peak_annotation)
+df_dm_annotated <- df_dm_annotated[!is.na(df_dm_annotated$annot.symbol),]
+
+df_dm_annotated$id <- paste0(df_dm_annotated$seqnames, "-", df_dm_annotated$start, "-", df_dm_annotated$end)
+
+dedup.df_dm_annotated <- df_dm_annotated[!duplicated(df_dm_annotated$id),]
+
+sum(!dedup.df_dm_annotated$id %in% rownames(merge.obj))
+```
+
+```{r annotate DAR with Gene Symbol}
+atac_variable_names <- ls(pattern="\\.atac.marker$")
+
+for (atacmarker in atac_variable_names) {
+  atac.maker <- get(atacmarker)
+  atac.maker$genesymbol <- NA
+  atac.maker$genesymbol <- dedup.df_dm_annotated$annot.symbol[match(rownames(atac.maker),dedup.df_dm_annotated$id)]
+  assign(atacmarker,atac.maker)
+}
+
+Exc.atac.GO.gene <- Exc.atac.marker[Exc.atac.marker$sig != "not_sig",]$genesymbol
+```
+
+1.  annotate all the peaks
+2.  merge the count of those peaks if they have
+
+```{r}
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(ChIPseeker)
+```
+
+```{r bravo! enhancer matrix}
+peak_coordinates <- granges(merge.obj[['ATAC']])
+annotated_peaks <- annotatePeak(peak_coordinates, TxDb=TxDb.Mmusculus.UCSC.mm10.knownGene)
+
+df_annotation <- as.data.frame(annotated_peaks)
+rownames(df_annotation) <- paste0(df_annotation$seqnames, "-", df_annotation$start, "-", df_annotation$end)
+
+df_annotation$anno_simp <- gsub("\\(.*?\\)", "", df_annotation$annotation)
+df_annotation$anno_simp <- gsub("\\s+$", "", df_annotation$anno_simp)
+
+df_annotation <- df_annotation[df_annotation$anno_simp == ""]
+
+
+```
+
+```{r}
+library(annotatr)
+```
+
+```{r}
+biltin_annot <- builtin_annotations()
+mm10_builtin_annot <- biltin_annot[grep("mm10",biltin_annot)]
+
+mm10_annotations <- build_annotations(genome = 'mm10', annotations = mm10_builtin_annot)
+
+enhancer_annotation <- annotate_regions(regions = peak_coordinates,
+                                        annotations = mm10_annotations)
+
+df_dm_annotated <- data.frame(enhancer_annotation)
+
+df_dm_annotated_enhancer <- df_dm_annotated[grep("enhancer",df_dm_annotated$annot.type),]
+
+
+common_enhancer_peak <- intersect(rownames(merge.obj@assays$Enhancer$counts),
+                                  paste(df_dm_annotated_enhancer$seqnames,df_dm_annotated_enhancer$start,df_dm_annotated_enhancer$end,sep = "-"))
+
+
+merge.obj[['Enhancer']] <- CreateAssayObject(counts = merge.obj@assays$ATAC$counts[common_enhancer_peak,])
+
+```
+
+```{r enhancer matrix normalization}
+DefaultAssay(merge.obj) <- "Enhancer"
+
+merge.obj <- RunTFIDF(merge.obj)
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "Enhancer"
+Idents(merge.obj) <- "celltype.detailed.v2"
+
+for(ct in unique(merge.obj$celltype.detailed.v2)){
+      marker <- FindMarkers(merge.obj,
+                           ident.1 = "HF", ident.2 = "MF", # HF vs MF
+                           group.by = 'condition',
+                           subset.ident = ct,
+                           test.use = 'LR',
+                           min.pct = 0.1,
+                           latent.vars = 'nCount_ATAC')
+      
+      
+      # avg <- as.data.frame(AverageExpression(merge.obj,assays = "RNA",
+      #                         features = rownames(marker),group.by = "combined_condition"))
+      # 
+      # marker$mf_avg <- avg[,paste("RNA.",ct,".MF",sep = "")]
+      # marker$hf_avg <- avg[,paste("RNA.",ct,".HF",sep = "")]
+      
+      marker$celltype <- ct
+      
+      marker$gene <- rownames(marker)
+      marker$regulation <- ifelse(marker$avg_log2FC > 0,paste0("Up"),paste0("Down"))
+
+      marker$sig <- "not_sig"
+      marker$sig[abs(marker$avg_log2FC) > log2(1.2) & marker$p_val_adj < 0.05] <- paste(ct,"sig",sep = "_")
+      marker$sig <- factor(marker$sig, levels = c("not_sig",paste(ct,"sig",sep = "_")))
+      
+      assign(paste(ct,"enhancer.marker",sep = "."), marker)
+      
+      write.csv(marker, file = paste0("./DEG_tables/",paste(ct,"enhancer.marker.csv", sep = ".")))
+      }
+```
+
+```{r}
+
+celltype <- levels(merge.obj$celltype.detailed.v2)
+
+bar.df <- data.frame(CellType = celltype,
+                     UP = rep(0,length(celltype),
+                     DOWN = rep(0,length(celltype))))
+
+
+
+for (ct in celltype) {
+  marker <- get(paste0(ct,".enhancer.marker"))
+  bar.df$UP[bar.df$CellType == ct] <- sum(marker$regulation == "Up" & marker$sig != "not_sig")
+  bar.df$DOWN[bar.df$CellType == ct] <- sum(marker$regulation == "Down" & marker$sig != "not_sig")
+}
+
+
+bar.plot.tb <- data.frame(celltype = c(bar.df$CellType, bar.df$CellType),
+                          number = c(bar.df$UP, bar.df$DOWN),
+                          direct = c(rep("up",length(bar.df$CellType)), rep("down",length(bar.df$CellType))))
+
+bar.plot.tb[bar.plot.tb$direct == "down",]$number <- -bar.plot.tb[bar.plot.tb$direct == "down",]$number
+
+
+bar.plot.tb$celltype <- factor(bar.plot.tb$celltype, levels = celltype)
+
+ggplot(bar.plot.tb, aes(x = celltype, y = number, fill = direct)) +
+  geom_bar(stat = "identity", position = "identity") +
+  labs(x = i, y = "Number of DEGs", fill = "Direction") +
+  geom_text(aes(label=abs(number)), position=position_dodge(width=0), 
+            hjust= ifelse(bar.plot.tb$direct == 'up', 0.5, 0.5),
+            vjust = ifelse(bar.plot.tb$direct == 'up', -0.5, 1.5),
+            size=5) +
+  scale_fill_manual(values = c("up" = "red", "down" = "blue"))+
+  theme(
+    axis.text=element_text(size=10),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    panel.background = element_rect(fill = "white"), # Change background to white
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.border = element_rect(size = 2,fill = NA)
+  )
+
+ggsave(paste("./Figure/barplot.celltype.merge.sub.enhancer.1.2fc.padj.tiff", sep = ""), 
+       device='tiff', dpi=300, height = 1500, width = 1500, unit = 'px')
+```
+
+```{r}
+table(merge.obj$orig.ident,merge.obj$celltype.crude.v2)
+write.csv(table(merge.obj$orig.ident,merge.obj$celltype.crude.v2), file = "./DEG_tables/sample.celltype.crude.csv")
+write.csv(table(merge.obj$orig.ident,merge.obj$celltype.detailed.v2), file = "./DEG_tables/sample.celltype.detail.csv")
+
+
+
+
+colSums(as.matrix(merge.obj@assays$RNA$counts != 0))
+
+
+sample.id <- FetchData(merge.obj, vars = "orig.ident")
+
+unique(merge.obj$orig.ident)
+
+
+mfrep1.count <- rowSums(merge.obj@assays$RNA$counts[,rownames(sample.id)[sample.id$orig.ident == "MF.rep1"]])
+mfrep2.count <- rowSums(merge.obj@assays$RNA$counts[,rownames(sample.id)[sample.id$orig.ident == "MF.rep2"]])
+mfrep3.count <- rowSums(merge.obj@assays$RNA$counts[,rownames(sample.id)[sample.id$orig.ident == "MF.rep3"]])
+hfrep1.count <- rowSums(merge.obj@assays$RNA$counts[,rownames(sample.id)[sample.id$orig.ident == "HF.rep1"]])
+hfrep3.count <- rowSums(merge.obj@assays$RNA$counts[,rownames(sample.id)[sample.id$orig.ident == "HF.rep3"]])
+
+sum(mfrep1.count !=0)
+sum(mfrep2.count !=0)
+sum(mfrep3.count !=0)
+sum(hfrep1.count !=0)
+sum(hfrep3.count !=0)
+
+peak.number <- list(MF.rep1 = names(mfrep1.count[mfrep1.count != 0]),
+            MF.rep2 = names(mfrep2.count[mfrep2.count != 0]),
+            MF.rep3 = names(mfrep3.count[mfrep3.count != 0]),
+            HF.rep1 = names(hfrep1.count[hfrep1.count != 0]),
+            HF.rep3 = names(hfrep3.count[hfrep3.count != 0]))
+
+ggvenn(peak.number)
+
+m = make_comb_mat(peak.number)
+
+UpSet(m)
+```
+
+# atac, NUMBER OF PEAKS, how many features
+
+# check on astrocytes function
+
+```{r}
+DefaultAssay(merge.obj) <- "RNA"
+VlnPlot(merge.obj,
+        features = c('Slc17a7',
+                     'Gad2',
+                     "Aqp4", # Astrocytes
+                     "Cspg4", # oligo
+                     "Mog",
+                     "Ptprc"), # endothelial
+        flip = T,stack = T, group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+```
+
+```{r}
+VlnPlot(merge.obj,features = c('Aldh1l1'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('Aqp4'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('Gfap'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('Slc1a3'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+
+
+VlnPlot(merge.obj,features = c('C1qa'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('C1qb'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('C1qc'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+
+VlnPlot(merge.obj,features = c('Mertk'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('Megf10'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+VlnPlot(merge.obj,features = c('Ophn1'), group.by = "celltype.crude.v2",split.by = "condition") + NoLegend()
+```
+
+```{r}
+DefaultAssay(merge.obj) <- "RNA"
+
+CoveragePlot(
+  object = merge.obj,
+  region = "Slc17a7",
+  features = "Slc17a7",
+  assay = "ATAC",
+  extend.upstream = 8000,
+  extend.downstream = 5000,
+  split.by = "condition"
+)
+
+merge.obj$combined_condition <- paste(merge.obj$celltype.crude.v2,merge.obj$condition,sep = ".")
+temp <- AverageExpression(merge.obj, features = "Mertk",group.by = "combined_condition",assays = "RNA")
+temp <- as.data.frame(temp$RNA)
+
+temp2 <- FetchData(merge.obj, vars = c("combined_condition","Mertk"))
+
+sum(temp2$combined_condition == "OPC.HF" & temp2$Mertk !=0)/sum(temp2$combined_condition == "OPC.HF")
+sum(temp2$combined_condition == "OPC.MF" & temp2$Mertk !=0)/sum(temp2$combined_condition == "OPC.MF")
+```

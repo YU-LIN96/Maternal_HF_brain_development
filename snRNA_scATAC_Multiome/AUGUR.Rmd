@@ -1,0 +1,51 @@
+
+
+
+https://mp.weixin.qq.com/s/FlO4fN5AlcyZ81llzHE5Ag
+
+
+```{r}
+library(Augur)
+```
+
+
+
+```{r}
+#　https://github.com/neurorestore/Augur/issues/21
+# raw counts is recommended
+expr.mtx <- merge.obj@assays$RNA$counts
+meta <- merge.obj@meta.data
+```
+
+
+```{r}
+aug <- Augur::calculate_auc(expr.mtx,meta,n_threads = 12,
+                            cell_type_col = "celltype.detailed", label_col = "condition")
+```
+
+
+```{r}
+save(aug,file = "aug.RData")
+
+```
+
+
+```{r}
+plot_lollipop(aug)
+```
+
+```{r}
+feature_importance.filter <- aug$feature_importance[aug$feature_importance$importance != 0,]
+
+nrow(aug$feature_importance)
+nrow(feature_importance.filter)
+
+
+top_10.fi <- feature_importance.filter %>% group_by(cell_type)  %>% top_n(10, importance)
+
+
+aug$AUC
+```
+
+
+

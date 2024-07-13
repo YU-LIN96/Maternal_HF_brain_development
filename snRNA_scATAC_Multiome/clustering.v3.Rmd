@@ -1,0 +1,215 @@
+
+
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(clustree)
+library(readxl)
+library(scales)
+
+library(Signac)
+library(biovizBase)
+library(EnsDb.Mmusculus.v79) 
+library(BSgenome.Mmusculus.UCSC.mm10)
+
+library(future)
+library(clusterProfiler)
+library(enrichplot)
+library(DOSE)
+
+library(ComplexHeatmap)
+library(scRNAtoolVis)
+
+library(tackPlotR)
+library(ggsci)
+library(rtracklayer)
+
+library(circlize)
+
+```
+
+<https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html>
+
+```{r}
+load("new.raw.rna.merge.obj.Rdata")
+load("new.raw.atac.merge.obj.Rdata")
+```
+
+
+
+```{r}
+merge.obj <- rna.merge.obj
+merge.obj[["ATAC"]] <- atac.merge.obj[["ATAC"]]
+```
+
+
+```{r}
+merge.obj[["percent.mt"]] <- PercentageFeatureSet(merge.obj, pattern = "^mt-")
+merge.obj[["percent.ribo"]] <- PercentageFeatureSet(merge.obj, pattern = "^Rp[sl]")
+merge.obj <- AddMetaData(object = merge.obj, metadata = merge.obj@meta.data$nCount_RNA/merge.obj@meta.data$nFeature_RNA, col.name = "CountPerGene")
+```
+
+
+```{r quantile features}
+quantile(merge.obj$nFeature_ATAC, c(0.05,0.1,0.9,0.95))
+quantile(merge.obj$nFeature_RNA, c(0.05,0.1,0.9,0.95))
+```
+
+```{r}
+merge.obj <- subset(merge.obj, nFeature_RNA > 500 & # quantile(merge.obj$nFeature_RNA,0.05) = 592.8
+                    nFeature_RNA < 7000 &  # quantile(merge.obj$nFeature_RNA,0.95) = 36898.8
+                    nCount_ATAC > 1000 & # 
+                    nFeature_ATAC > 1000 & # lower 5 percentile = 553, lower 10% percentile = 967
+                    percent.mt < 2)
+```
+
+```{r}
+save(merge.obj, file = "new.filtered.obj.Rdata")
+
+```
+
+
+
+```{r}
+set.seed(1234)
+```
+
+
+```{r atac clustering}
+DefaultAssay(merge.obj) <- "ATAC"
+
+merge.obj <- NucleosomeSignal(object = merge.obj)
+merge.obj <- TSSEnrichment(merge.obj)
+
+
+merge.obj <- FindTopFeatures(merge.obj)
+merge.obj <- RunTFIDF(merge.obj)
+merge.obj <- RunSVD(merge.obj)
+```
+
+```{r}
+DepthCor(object = merge.obj,n = 50, reduction = "lsi")
+ElbowPlot(object = merge.obj, ndims = 50, reduction = "lsi")
+```
+
+```{r}
+merge.obj <- RunUMAP(object = merge.obj,  reduction = 'lsi',  dims = 2:20,reduction.name = "atacUMAP", reduction.key = "atacUMAP_")
+```
+
+```{r}
+merge.obj <- FindNeighbors(object = merge.obj,reduction = 'lsi',  dims = 2:20)
+merge.obj <- FindClusters(object = merge.obj, resolution = 0.2, algorithm = 3, verbose = FALSE)
+```
+
+```{r}
+DimPlot(merge.obj, reduction = "atacUMAP", label = F, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+ggsave(paste("./Figure/Dimplot.atac.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+ggsave(paste("./Figure/Dimplot.atac.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+```
+
+
+
+```{r RNA normalization}
+DefaultAssay(merge.obj) <- "RNA"
+
+merge.obj <- NormalizeData(merge.obj)
+merge.obj <- FindVariableFeatures(merge.obj,nfeatures = 3000)
+merge.obj <- ScaleData(merge.obj, features = rownames(merge.obj))
+merge.obj <- RunPCA(merge.obj, verbose = FALSE)
+ElbowPlot(merge.obj, ndims = 50, reduction = "pca")
+
+# RNA UMAP
+merge.obj <- RunUMAP(merge.obj, reduction = "pca", dims = 1:20, reduction.name = "RNAUMAP", reduction.key = "RNAUMAP_")
+
+
+# Clustering
+merge.obj <- FindNeighbors(merge.obj, reduction = 'pca',dims = 1:20)
+merge.obj <- FindClusters(merge.obj, resolution = 0.1, verbose = FALSE)
+```
+
+
+
+```{r}
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE)
+DimPlot(merge.obj, reduction = "RNAUMAP", label = F, repel = TRUE, group.by = "orig.ident")
+
+DimPlot(merge.obj, reduction = "RNAUMAP", label = F, repel = TRUE, group.by = "RNA_snn_res.0.1")
+ggsave(paste("./Figure/Dimplot.rna.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+ggsave(paste("./Figure/Dimplot.rna.labeled.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+```
+
+
+
+
+
+
+```{r wnn clustering}
+
+merge.obj <- FindMultiModalNeighbors(merge.obj, reduction.list = list("pca", "lsi"), dims.list = list(1:13, 2:13))
+merge.obj <- RunUMAP(merge.obj, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_")
+
+merge.obj <- FindClusters(merge.obj, graph.name = "wsnn", algorithm = 3,
+                          resolution = 0.075, verbose = FALSE)
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE)
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+FeaturePlot(merge.obj, features = "nFeature_RNA", reduction = "wnn.umap")
+```
+
+
+```{r}
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE)
+ggsave(paste("./Figure/cluster/Dimplot.wnncluster.in.RNAUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+ggsave(paste("./Figure/cluster/Dimplot.rnacluster.in.RNAUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+DimPlot(merge.obj, reduction = "RNAUMAP", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+ggsave(paste("./Figure/cluster/Dimplot.ataccluster.in.RNAUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE)
+ggsave(paste("./Figure/cluster/Dimplot.wnncluster.in.atacUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+ggsave(paste("./Figure/cluster/Dimplot.rnacluster.in.atacUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+DimPlot(merge.obj, reduction = "atacUMAP", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+ggsave(paste("./Figure/cluster/Dimplot.ataccluster.in.atacUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE)
+ggsave(paste("./Figure/cluster/Dimplot.wnncluster.in.wnnUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "RNA_snn_res.0.1")
+ggsave(paste("./Figure/cluster/Dimplot.rnacluster.in.wnnUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "ATAC_snn_res.0.2")
+ggsave(paste("./Figure/cluster/Dimplot.ataccluster.in.wnnUMAP.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+
+```{r}
+save(merge.obj, file = "merge.obj.final.Rdata")
+```
+
+
+
+
+
+
+
+
+
+

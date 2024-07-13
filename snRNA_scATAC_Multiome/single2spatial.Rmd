@@ -1,0 +1,241 @@
+---
+title: "Untitled"
+author: "Yu"
+date: "2024-04-19"
+output: html_document
+---
+
+```{r}
+load("sp.Rdata")
+```
+
+```{r}
+DefaultAssay(hip.obj) <- "Spatial"
+hip.obj <- subset(hip.obj, subset = specified_anatomy %in% c("hippocampus_2","hippocampus_1",
+                                                             "hippocampus_0","hippocampus_3"))
+
+hip.obj <- FindVariableFeatures(hip.obj)
+hip.obj <- ScaleData(hip.obj, features = rownames(hip.obj))
+hip.obj <- RunPCA(hip.obj, verbose = FALSE)
+ElbowPlot(hip.obj, ndims = 50, reduction = "pca")
+```
+
+
+
+```{r}
+anchors <- FindTransferAnchors(reference = hippo.neuron.obj, query = hip.obj, normalization.method = "LogNormalize")
+
+predictions.assay <- TransferData(anchorset = anchors, refdata = hippo.neuron.obj$celltype.neuron, 
+                                  prediction.assay = TRUE,
+                                  weight.reduction = hip.obj[["pca"]], dims = 1:30) # 30
+hip.obj[["predictions"]] <- predictions.assay
+```
+
+
+
+
+```{r}
+DefaultAssay(hip.obj) <- "predictions"
+SpatialFeaturePlot(hip.obj, features = c("Erbb4-Exc"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+ggsave(filename = paste0("./Figure/single2spatial/Erbb4-Exc.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+SpatialFeaturePlot(hip.obj, features = c("CA1-Exc"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+ggsave(filename = paste0("./Figure/single2spatial/CA1-Exc.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+SpatialFeaturePlot(hip.obj, features = c("CA3-Exc"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+ggsave(filename = paste0("./Figure/single2spatial/CA3-Exc.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+
+SpatialFeaturePlot(hip.obj, features = c("max"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+```
+
+```{r}
+DefaultAssay(hip.obj) <- "Spatial"
+anchors <- FindTransferAnchors(reference = hippo.neuron.obj, query = hip.obj, normalization.method = "LogNormalize")
+
+predictions.assay <- TransferData(anchorset = anchors, refdata = hippo.neuron.obj$celltype.detailed, 
+                                  prediction.assay = TRUE,
+                                  weight.reduction = hip.obj[["pca"]], dims = 1:10) # 30
+hip.obj[["predictions"]] <- predictions.assay
+```
+
+```{r}
+merge.obj$celltype.detailed.v2 <- merge.obj$celltype.detailed
+merge.obj$celltype.detailed.v2 <- as.character(merge.obj$celltype.detailed.v2)
+merge.obj$celltype.detailed.v2[merge.obj$celltype.detailed.v2 == "Exc2"] <- "DG_Mature_Exc"
+merge.obj$celltype.detailed.v2[merge.obj$celltype.detailed.v2 == "Neuron"] <- "DG_Imamature_neuron"
+
+DefaultAssay(hip.obj) <- "Spatial"
+DefaultAssay(merge.obj) <- "RNA"
+anchors <- FindTransferAnchors(reference = merge.obj, query = hip.obj, normalization.method = "LogNormalize")
+
+predictions.assay <- TransferData(anchorset = anchors, refdata = merge.obj$celltype.detailed.v2, 
+                                  prediction.assay = TRUE,
+                                  weight.reduction = hip.obj[["pca"]], dims = 1:30) # 30
+hip.obj[["predictions"]] <- predictions.assay
+```
+
+
+
+```{r}
+DefaultAssay(hip.obj) <- "predictions"
+SpatialFeaturePlot(hip.obj, features = c("DG-Imamature-neuron"),
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+ggsave(filename = paste0("./Figure/single2spatial/DG-Mature-Exc.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+SpatialFeaturePlot(hip.obj, features = c("DG-Mature-Exc"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+ggsave(filename = paste0("./Figure/single2spatial/DG-Immature-Neuron.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                         
+EXC1:CAl neuron (Man1a, Mpped1)
+EXC3:CA2 (Ptpn5)
+EXC4:CA3(Slc1a2)
+EXC2:DG mature neuron (Pde7b, Pdzd2, Trpc6)
+Neuron: DG immature neuron (Sox11 and Dcx marker for immature marker)e.(Prox1 as the shared marker for EXC2 and neuron)
+
+```{r}
+DefaultAssay(hip.obj) <- "Spatial"
+
+SpatialFeaturePlot(hip.obj, features = c("Man1a"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Mpped1"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Slc1a2"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Ptpn5"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Pde7b"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Pdzd2"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Trpc6"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Sox11"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Dcx"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+SpatialFeaturePlot(hip.obj, features = c("Prox1"), 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+
+```
+
+
+
+
+
+
+```{r}
+
+target_genes <- c("Man1a","Mpped1","Slc1a2","Ptpn5","Pde7b",
+                  "Pdzd2","Trpc6","Sox11","Dcx","Prox1",
+                  "Spock1","Erbb4","Phka1",
+                  "Thbs4","Dsp","Spink8","Ptgs2")
+ 
+for (gene in target_genes) {
+  SpatialFeaturePlot(merge.obj, features = gene, 
+                   images = "hf_p21_rep1",
+                   pt.size.factor = 1, crop = FALSE, alpha = c(0.1, 1))
+  ggsave(filename = paste0("./Figure/single2spatial/",gene,".tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+}
+```
+
+
+```{r}
+library(magick)
+```
+
+
+
+```{r change saturation of image}
+test.image <- hip.obj@images$hf_p21_rep1@image
+
+
+# Convert the spatial image to a format compatible with magick
+image_path <- "Figure/single2spatial/test.png"
+png::writePNG(test.image, image_path, dpi = 300)
+
+
+
+image <- image_read(image_path)
+
+adjusted_image <- image_modulate(image, brightness = 100, saturation =  40)
+
+# Save the adjusted image
+adjusted_image_path <- "Figure/single2spatial/adjusted_test.png"
+image_write(adjusted_image, adjusted_image_path)
+
+# Display the adjusted image
+print(adjusted_image)
+
+# Load the adjusted image back into R
+adjusted_image_array <- png::readPNG(adjusted_image_path)
+
+# Create a new Seurat object with the adjusted image
+# Replace "hf_p21_rep1" with the name you want to give to the new image
+hip.obj@images$hf_p21_rep1@image <- adjusted_image_array
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

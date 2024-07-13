@@ -1,0 +1,323 @@
+
+
+
+# Trajectory
+
+```{r}
+library(monocle3)
+library(SeuratWrappers)
+```
+
+
+
+```{r}
+# Exc, astrocyte, neuron
+ean.obj <- subset(merge.obj, subset = celltype.detailed %in% c("Exc2", "Ast", "Neuron"))
+```
+
+
+```{r}
+save(ean.obj, file = "ean.obj.Rdata")
+```
+
+
+
+```{r}
+DimPlot(merge.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "celltype.detailed")
+DimPlot(ean.obj, reduction = "wnn.umap", label = T, repel = TRUE, group.by = "celltype.detailed")
+FeaturePlot(ean.obj, features = "nFeature_RNA", reduction = "wnn.umap")
+```
+
+
+
+```{r}
+DefaultAssay(ean.obj) <- "RNA"
+
+ean.cds <- as.cell_data_set(ean.obj)
+reducedDims(ean.cds)$UMAP <- reducedDims(ean.cds)$WNN.UMAP
+ean.cds <- cluster_cells(ean.cds)
+ean.cds <- learn_graph(ean.cds)
+ean.cds <- order_cells(ean.cds)
+
+plot_cells(ean.cds, label_groups_by_cluster = FALSE, label_leaves = FALSE, label_branch_points = FALSE)
+
+ean.obj$pseudotime <- pseudotime(ean.cds, reduction_method = "UMAP")
+
+FeaturePlot(ean.obj, features = "pseudotime", reduction = "wnn.umap")
+```
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+# ODC,OPC
+oc.obj <- subset(merge.obj, subset = celltype.detailed %in% c("OPC", "ODC"))
+
+cells.located.1 <- CellSelector(plot = DimPlot(oc.obj, reduction = "wnn.umap"))
+cells.located.2 <- CellSelector(plot = DimPlot(oc.obj, reduction = "wnn.umap"))
+oc.obj <- subset(oc.obj, cells = colnames(oc.obj)[!colnames(oc.obj) %in% c(cells.located.1,cells.located.2)])
+```
+
+
+```{r}
+save(oc.obj, file = "oc.obj.Rdata")
+```
+
+
+
+```{r}
+DefaultAssay(oc.obj) <- "RNA"
+oc.cds <- as.cell_data_set(oc.obj)
+reducedDims(oc.cds)$UMAP <- reducedDims(oc.cds)$WNN.UMAP
+oc.cds <- cluster_cells(oc.cds)
+oc.cds <- learn_graph(oc.cds)
+oc.cds <- order_cells(oc.cds)
+
+
+plot_cells(oc.cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE)
+
+plot_cells(oc.cds)
+
+
+oc.obj$pseudotime <- pseudotime(oc.cds, reduction_method = "UMAP")
+
+range(oc.obj$pseudotime)
+table(oc.obj$pseudotime == Inf)
+
+DimPlot(oc.obj, reduction = "wnn.umap")
+
+```
+
+
+
+```{r}
+FeaturePlot(oc.obj, features = "pseudotime", reduction = "wnn.umap")
+```
+
+
+```{r}
+pr_graph_test_res <- graph_test(oc.cds, neighbor_graph="knn", cores=8)
+
+save(pr_graph_test_res, file = "oc.cds.pr_graph_test_res.Rdata")
+
+pr_deg_ids <- row.names(subset(pr_graph_test_res, q_value < 0.05))
+```
+
+
+
+```{r}
+oc.cds_subset <- oc.cds[rownames(oc.cds) %in% pr_deg_ids,]
+
+gene_fits <- fit_models(oc.cds_subset, model_formula_str = "~pseudotime + condition")
+fit_coefs <- coefficient_table(gene_fits)
+
+save(fit_coefs, file = "fit_coefs.Rdata")
+```
+
+
+```{r}
+nrow(fit_coefs[fit_coefs$q_value < 0.01,])
+fit_coefs.sig <- fit_coefs[fit_coefs$q_value < 0.01,]
+# if duplicated = T, then the gene  = time * sig & condition * sig
+fit_coefs.sig <- fit_coefs.sig[fit_coefs.sig$gene_id %in% fit_coefs.sig$gene_id[duplicated(fit_coefs.sig$gene_id)],]
+
+
+length(unique(fit_coefs.sig$gene_id))
+
+
+fit_coefs.condition <- fit_coefs[fit_coefs$q_value < 0.01,]
+
+# if duplicated = F, then the gene  = time * sig or condition * sig but cannot be both
+fit_coefs.condition <- fit_coefs.condition[!fit_coefs.condition$gene_id %in% fit_coefs.condition$gene_id[duplicated(fit_coefs.condition$gene_id)],]
+fit_coefs.condition <- fit_coefs.condition[fit_coefs.condition$term == "(Intercept)",]
+
+length(unique(fit_coefs.condition$gene_id))
+```
+
+
+
+```{r}
+
+pseudotime <- pseudotime(oc.cds, reduction_method = "UMAP")
+
+
+```
+
+
+
+```{r}
+library(ComplexHeatmap)
+```
+
+
+
+
+```{r}
+oc.obj <- ScaleData(oc.obj, features = rownames(oc.obj))
+exp.mtx <- oc.obj@assays$RNA$scale.data
+
+# For ~pseudotime + condition, both pseudotime & condition sig
+exp.mtx <- exp.mtx[unique(fit_coefs.sig$gene_id),names(oc.obj$pseudotime)[order(oc.obj$pseudotime,decreasing = F)]]
+
+# only condition sig
+# exp.mtx <- exp.mtx[unique(fit_coefs.condition$gene_id),names(oc.obj$pseudotime)[order(oc.obj$pseudotime,decreasing = F)]]
+
+
+exp.mtx.abs <- abs(exp.mtx)
+picked.gene <- names(head(sort(rowSums(exp.mtx.abs), decreasing = T),50))
+```
+
+
+
+```{r}
+library(circlize)
+```
+
+
+1. break pseudotime into bins
+2. compare the expressio of these genes in bins
+
+```{r}
+range(oc.obj$pseudotime)
+
+oc.obj$pseudotime.bin <- cut(oc.obj$pseudotime, 
+                             breaks = seq(0, 16, length.out = 5), 
+                             include.lowest = TRUE, 
+                             labels = FALSE)
+
+FeaturePlot(oc.obj, features = "pseudotime.bin", reduction = "wnn.umap")
+
+VlnPlot(oc.obj, features = names(head(sort(rowSums(exp.mtx.abs), decreasing = T),10)), 
+        pt.size = 0,
+        group.by = "pseudotime.bin", 
+        split.by = "condition",split.plot = TRUE , ncol = 2)
+
+
+oc.cds.subet <- as.cell_data_set(oc.obj)
+oc.cds.subet <- oc.cds[rownames(oc.cds.subet) %in% picked.gene,]
+plot_genes_in_pseudotime(oc.cds.subet,
+                         color_cells_by="pseudotime.bin",
+                         min_expr=0.5)
+```
+
+
+
+```{r}
+
+# Assuming oc.obj$pseudotime.bin and oc.obj$condition are vectors with names matching the column names of exp.mtx
+pseudotime_bin <- as.factor(oc.obj$pseudotime.bin) # Ensure it's a factor for discrete color coding
+condition <- as.factor(oc.obj$condition) # Ensure it's a factor for discrete color coding
+
+# Create a data frame for annotations
+annotations_df <- data.frame(pseudotime_bin, condition)
+
+
+pseudotime_colors <- c("1" = "#440154FF", "2" = "#472D7BFF", "3" = "#3B528BFF",
+                       "4" = "#2C728EFF", "5" = "#21908CFF", "6" = "#27AD81FF",
+                       "7" = "#5DC863FF", "8" = "#AADC32FF", "9" = "#FDE725FF")
+
+pseudotime_colors <- c("1" = "#440154FF", "2" = "#21908CFF", "3" = "#5DC863FF",
+                       "4" = "#FDE725FF")
+
+condition_colors <- c("MF" = "blue", "HF" = "red")
+
+
+annotations_df <- annotations_df[colnames(exp.mtx),]
+
+top_ha <- HeatmapAnnotation(df = annotations_df,
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors))
+
+
+p <- Heatmap(exp.mtx[picked.gene,],
+             top_annotation = top_ha,
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4"))
+        )
+ht <- draw(p)
+
+Heatmap(exp.mtx[picked.gene[row_order(ht)],grep("MF",colnames(exp.mtx))],
+        cluster_rows = F, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")),
+        top_annotation = HeatmapAnnotation(df = annotations_df[grep("MF",colnames(exp.mtx)),],
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors))
+        )
+
+Heatmap(exp.mtx[picked.gene[row_order(ht)],grep("HF",colnames(exp.mtx))],
+        cluster_rows = F, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")),
+        top_annotation = HeatmapAnnotation(df = annotations_df[grep("HF",colnames(exp.mtx)),],
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors))
+        )
+
+
+```
+
+
+
+```{r}
+table(oc.obj$pseudotime.bin,oc.obj$condition)
+
+write.csv(table(oc.obj$pseudotime.bin,oc.obj$condition), file = "pseudo_condition.table.csv")
+
+oc.obj$pseudotime.bin
+oc.obj$condition
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

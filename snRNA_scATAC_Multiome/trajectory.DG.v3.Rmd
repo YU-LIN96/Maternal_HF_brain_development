@@ -1,0 +1,719 @@
+---
+title: "trajectory"
+author: "Yu"
+date: "2024-05-20"
+output: html_document
+---
+
+```{r}
+library(monocle3)
+library(SeuratWrappers)
+library(Seurat)
+library(SeuratObject)
+library(monocle)
+library(tidyverse)
+library(ComplexHeatmap)
+```
+
+
+```{r}
+dg.neuron.obj <- subset(hippo.neuron.obj, subset= celltype.neuron %in% c("DG_Mature_Exc","DG_Immature_Neuron"))
+
+cells.located.dg <- CellSelector(plot = DimPlot(dg.neuron.obj, reduction = "wnn.umap"))
+
+dg.neuron.obj <- subset(dg.neuron.obj, cells = colnames(dg.neuron.obj)[!colnames(dg.neuron.obj) %in% cells.located.dg])
+```
+
+```{r}
+save(dg.neuron.obj, file = "primary.dg.subset.trajectory.Rdata")
+```
+
+
+
+
+```{r}
+DimPlot(dg.neuron.obj, reduction = "wnn.umap",label = T, group.by = "celltype.neuron")
+```
+
+```{r}
+cds <- as.cell_data_set(dg.neuron.obj)
+cds <- preprocess_cds(cds, num_dim = 50)
+cds <- align_cds(cds, alignment_group = "orig.ident")
+cds <- reduce_dimension(cds)
+cds <- cluster_cells(cds)
+cds <- learn_graph(cds)
+cds <- order_cells(cds)
+
+plot_cells(cds)
+plot_cells(cds,color_cells_by = "celltype.neuron",cell_size = 1)
+ggsave(filename = paste0("./Figure/Trajectory/cell.type.trajectory.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,cell_size = 1)
+
+ggsave(filename = paste0("./Figure/Trajectory/trajectory.tiff"), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+```{r}
+save(cds, file = "cds.traject_built.Rdata")
+```
+
+
+
+```{r}
+shared.sub.cds <- choose_graph_segments(cds)
+sub.up.cds <- choose_graph_segments(cds)
+sub.down.cds <- choose_graph_segments(cds)
+```
+
+
+```{r}
+plot_cells(cds[,colnames(sub.down.cds)],color_cells_by = "celltype.neuron",cell_size = 1)
+```
+
+
+
+```{r}
+shared.sub.pr_graph_test_res <- graph_test(cds[,colnames(shared.sub.cds)], neighbor_graph="principal_graph", cores=8)
+sub.up.pr_graph_test_res <- graph_test(cds[,colnames(sub.up.cds)], neighbor_graph="principal_graph", cores=8)
+sub.down.pr_graph_test_res <- graph_test(cds[,colnames(sub.down.cds)], neighbor_graph="principal_graph", cores=8)
+```
+
+
+```{r}
+save(shared.sub.cds,sub.up.cds,sub.down.cds,
+     shared.sub.pr_graph_test_res,
+     sub.up.pr_graph_test_res,
+     sub.down.pr_graph_test_res, 
+     file = "dg.cds.pr_graph_test_res.Rdata")
+```
+
+
+
+```{r}
+shared.pr_deg_ids <- row.names(subset(shared.sub.pr_graph_test_res, q_value < 0.05))
+shared.cds_subset <- shared.sub.cds[rownames(shared.sub.cds) %in% shared.pr_deg_ids,]
+shared.gene_fits <- fit_models(shared.cds_subset, model_formula_str = "~pseudotime*condition")
+shared.fit_coefs <- coefficient_table(shared.gene_fits)
+
+sub.up.pr_deg_ids <- row.names(subset(sub.up.pr_graph_test_res, q_value < 0.05))
+sub.up.cds_subset <- sub.up.cds[rownames(sub.up.cds) %in% sub.up.pr_deg_ids,]
+sub.up.gene_fits <- fit_models(sub.up.cds_subset, model_formula_str = "~pseudotime*condition")
+sub.up.fit_coefs <- coefficient_table(sub.up.gene_fits)
+
+sub.down.pr_deg_ids <- row.names(subset(sub.down.pr_graph_test_res, q_value < 0.05))
+sub.down.cds_subset <- sub.down.cds[rownames(sub.down.cds) %in% sub.down.pr_deg_ids,]
+sub.down.gene_fits <- fit_models(sub.down.cds_subset, model_formula_str = "~pseudotime*condition")
+sub.down.fit_coefs <- coefficient_table(sub.down.gene_fits)
+```
+
+
+```{r}
+save(shared.fit_coefs, sub.up.fit_coefs, sub.down.fit_coefs,
+     file = "dg.fit_coefs.Rdata")
+```
+
+
+```{r}
+dg.neuron.obj$pseudotime <- pseudotime(cds, reduction_method = "UMAP")
+```
+
+
+```{r expression plot of one demo gene}
+test.df <- FetchData(dg.neuron.obj, vars = c("pseudotime.bin","Rpl34","condition"))
+
+ggplot(test.df, aes(x = pseudotime.bin, fill = as.factor(condition), color = as.factor(condition))) +
+  geom_density(alpha = 0.5, position = "identity") +
+  labs(title = "Rpl34 Expression Along Pseudotime by Condition",
+       x = "Pseudotime",
+       y = "Density",
+       fill = "Condition",
+       color = "Condition") +
+  scale_fill_manual(values = c("HF" = "yellow", "MF" = "blue")) +
+  scale_color_manual(values = c("HF" = "yellow", "MF" = "blue")) +
+  theme_minimal()
+
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rpl34, color = condition)) +
+  geom_point(aes(group = condition)) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rpl34 Expression") +
+  theme_minimal()
+
+RidgePlot(object = dg.neuron.obj, features = 'Rpl34',group.by = "condition")
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rpl34, color = condition)) +
+  geom_point(aes(group = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = FALSE) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rpl34 Expression") +
+  theme_minimal()
+
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rpl34, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = T) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rpl34 Expression") +
+  theme_minimal()
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rpl34, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = F) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rpl34 Expression") +
+  theme_minimal()
+```
+
+
+```{r}
+# Step 1: Compute the average expression for each pseudotime bin and condition
+avg_df <- test.df %>%
+  group_by(pseudotime.bin, condition) %>%
+  summarise(avg_Rpl34 = mean(Rpl34, na.rm = TRUE))
+
+# Step 2: Plot the data points and the average line
+ggplot(test.df, aes(x = pseudotime.bin, y = Rpl34, color = condition)) +
+  geom_point(aes(group = condition), alpha = 0.5) +  # Alpha to make points more transparent
+  geom_line(data = avg_df, aes(x = pseudotime.bin, y = avg_Rpl34, group = condition, color = condition), size = 1.5) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rpl34 Expression") +
+  theme_minimal()
+```
+
+
+
+```{r expression plot of one demo up gene}
+test.df <- FetchData(dg.neuron.obj, vars = c("pseudotime.bin","Rora","condition"))
+
+
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rora, color = condition)) +
+  geom_point(aes(group = condition)) +
+  labs(title = "Expression of Rora along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+
+RidgePlot(object = dg.neuron.obj, features = 'Rora',group.by = "condition")
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rora, color = condition)) +
+  geom_point(aes(group = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = FALSE) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rora, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = T) +
+  labs(title = "Expression of Rora along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+
+ggplot(test.df, aes(x = pseudotime.bin, y = Rora, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = F) +
+  labs(title = "Expression of Rora along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+```
+
+
+
+```{r expression plot of one demo up gene}
+test.df <- FetchData(dg.neuron.obj, vars = c("pseudotime","Rora","condition"))
+
+
+
+ggplot(test.df, aes(x = pseudotime, y = Rora, color = condition)) +
+  geom_point(aes(group = condition)) +
+  labs(title = "Expression of Rora along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+
+RidgePlot(object = dg.neuron.obj, features = 'Rora',group.by = "condition")
+
+ggplot(test.df, aes(x = pseudotime, y = Rora, color = condition)) +
+  geom_point(aes(group = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = FALSE) +
+  labs(title = "Expression of Rpl34 along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+
+
+ggplot(test.df, aes(x = pseudotime, y = Rora, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = T) +
+  labs(title = "Expression of Rora along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+
+ggplot(test.df, aes(x = pseudotime, y = Rora, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = F) +
+  labs(title = "Expression of Rora along Pseudotime",
+       x = "Pseudotime",
+       y = "Rora Expression") +
+  theme_minimal()
+```
+
+
+```{r assign pseudotime bin}
+dg.neuron.obj$pseudotime.bin <- cut(dg.neuron.obj$pseudotime,
+                                    breaks = seq(0, 20, length.out = 11), # 11
+                                    include.lowest = TRUE, 
+                                    labels = FALSE)
+
+FeaturePlot(dg.neuron.obj, features = "pseudotime.bin", reduction = "wnn.umap")
+
+```
+
+
+```{r assign pseudotime bin}
+VlnPlot(dg.neuron.obj, features = "Rpl34", 
+        pt.size = 0,
+        group.by = "pseudotime.bin", 
+        split.by = "condition",split.plot = TRUE , ncol = 1)
+
+FeaturePlot(dg.neuron.obj, features = "Rpl34", reduction = "wnn.umap")
+```
+
+
+```{r}
+shared.fit_coefs <- shared.fit_coefs[!is.na(shared.fit_coefs$gene_id),]
+sub.up.fit_coefs <- sub.up.fit_coefs[!is.na(sub.up.fit_coefs$gene_id),]
+sub.down.fit_coefs <- sub.down.fit_coefs[!is.na(sub.down.fit_coefs$gene_id),]
+```
+
+
+
+
+```{r pickout ~time*condition genes}
+shared.fit_coefs.sig <- shared.fit_coefs[shared.fit_coefs$q_value < 0.05,]
+sub.down.fit_coefs.sig <- sub.down.fit_coefs[sub.down.fit_coefs$q_value < 0.05,]
+sub.up.fit_coefs.sig <- sub.up.fit_coefs[sub.up.fit_coefs$q_value < 0.05,]
+
+
+
+
+# condition related genes along pseudotime
+shared.fit_coefs.sig.condition <- shared.fit_coefs.sig[shared.fit_coefs.sig$term == "conditionMF",] # 46
+shared.fit_coefs.sig.condition <- shared.fit_coefs.sig.condition[!is.na(shared.fit_coefs.sig.condition$gene_id),]
+
+sub.down.fit_coefs.sig.condition <- sub.down.fit_coefs.sig[sub.down.fit_coefs.sig$term == "conditionMF",] # 3
+sub.down.fit_coefs.sig.condition <- sub.down.fit_coefs.sig.condition[!is.na(sub.down.fit_coefs.sig.condition$gene_id),]
+
+sub.up.fit_coefs.sig.condition <- sub.up.fit_coefs.sig[sub.up.fit_coefs.sig$term == "conditionMF",] # 2
+sub.up.fit_coefs.sig.condition <- sub.up.fit_coefs.sig.condition[!is.na(sub.up.fit_coefs.sig.condition$gene_id),]
+
+
+# pseudotime related genes
+shared.fit_coefs.sig.pseudotime <- shared.fit_coefs.sig[shared.fit_coefs.sig$term == "pseudotime",] # 957
+shared.fit_coefs.sig.pseudotime <- shared.fit_coefs.sig.pseudotime[!is.na(shared.fit_coefs.sig.pseudotime$gene_id),]
+
+sub.down.fit_coefs.sig.pseudotime <- sub.down.fit_coefs.sig[sub.down.fit_coefs.sig$term == "pseudotime",] # 46
+sub.down.fit_coefs.sig.pseudotime <- sub.down.fit_coefs.sig.pseudotime[!is.na(sub.down.fit_coefs.sig.pseudotime$gene_id),]
+
+sub.up.fit_coefs.sig.pseudotime <- sub.up.fit_coefs.sig[sub.up.fit_coefs.sig$term == "pseudotime",] # 373
+sub.up.fit_coefs.sig.pseudotime <- sub.up.fit_coefs.sig.pseudotime[!is.na(sub.up.fit_coefs.sig.pseudotime$gene_id),]
+
+
+
+# intersect
+common.gene <- intersect(shared.fit_coefs.sig.condition$gene_id,shared.fit_coefs.sig.pseudotime$gene_id)
+
+
+hippo.DG_Immature_Neuron.deg.sig <- hippo.DG_Immature_Neuron.deg[hippo.DG_Immature_Neuron.deg$sig != "not_sig",]
+
+# DEG and psuedotime intersect
+psuedotime.deg <- intersect(hippo.DG_Mature_Exc.deg.sig$gene,
+                            unique(c(shared.fit_coefs.sig.pseudotime$gene_id,
+                                     sub.down.fit_coefs.sig.pseudotime$gene_id,
+                                     sub.up.fit_coefs.sig.pseudotime$gene_id)))
+
+psuedotime.deg2 <- intersect(unique(c(hippo.DG_Mature_Exc.deg.sig$gene,hippo.DG_Immature_Neuron.deg.sig$gene)),
+                 unique(c(shared.fit_coefs.sig.pseudotime$gene_id,
+                          sub.down.fit_coefs.sig.pseudotime$gene_id,
+                          sub.up.fit_coefs.sig.pseudotime$gene_id)))
+
+
+```
+
+
+```{r}
+time.condition.deg <- common.gene[-grep(pattern = "^Rp[sl]",common.gene)]
+```
+
+
+```{r}
+library(clusterProfiler)
+library(org.Mm.eg.db) # choose the right organism, the OG uses human, here we use mouse
+```
+
+```{r gene ontology for time.condition.deg }
+library(clusterProfiler)
+library(org.Mm.eg.db) # choose the right organism, the OG uses human, here we use mouse
+
+
+gene.df <- bitr(time.condition.deg, fromType = "SYMBOL",toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+
+ego <- enrichGO(gene = gene.df$ENTREZID,
+                OrgDb = org.Mm.eg.db,
+                ont = "BP",
+                readable = T)
+
+ego <- pairwise_termsim(ego)
+
+ego2 <- clusterProfiler::simplify(ego, cutoff=0.7, by="p.adjust", select_fun=min)
+  
+
+treeplot(ego,showCategory=30)
+treeplot(ego2,showCategory=20)
+
+
+
+
+simMatrix <- calculateSimMatrix(ego@result[ego@result$p.adjust < 0.05,]$ID,
+                                orgdb="org.Mm.eg.db",
+                                ont="BP",
+                                method="Rel")
+
+scores <- setNames(-log10(ego@result[ego@result$p.adjust < 0.05,]$p.adjust), ego@result[ego@result$p.adjust < 0.05,]$ID)
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.7,
+                                orgdb="org.Mm.eg.db")
+
+treemapPlot(reducedTerms)
+```
+
+
+
+```{r}
+dg.neuron.obj <- ScaleData(dg.neuron.obj, features = rownames(dg.neuron.obj))
+exp.mtx <- dg.neuron.obj@assays$RNA$scale.data
+exp.mtx <- exp.mtx[,names(dg.neuron.obj$pseudotime)[order(dg.neuron.obj$pseudotime,decreasing = F)]]
+```
+
+
+```{r}
+# Assuming oc.obj$pseudotime.bin and oc.obj$condition are vectors with names matching the column names of exp.mtx
+pseudotime_bin <- as.factor(dg.neuron.obj$pseudotime.bin) # Ensure it's a factor for discrete color coding
+condition <- as.factor(dg.neuron.obj$condition) # Ensure it's a factor for discrete color coding
+celltype <- factor(dg.neuron.obj$celltype.neuron, levels = c("DG_Immature_Neuron","DG_Mature_Exc"))
+
+# Create a data frame for annotations
+annotations_df <- data.frame(pseudotime_bin, condition, celltype)
+
+
+pseudotime_colors <- c("1" = "#440154FF", "2" = "#472D7BFF", "3" = "#3B528BFF",
+                       "4" = "#2C728EFF", "5" = "#21908CFF", "6" = "#27AD81FF",
+                       "7" = "#5DC863FF", "8" = "#AADC32FF", "9" = "#FDE725FF", "10" = "yellow")
+condition_colors <- c("MF" = "#45baff", "HF" = "#fb4137")
+
+celltype_color <- c("DG_Immature_Neuron" = "#00B0F6","DG_Mature_Exc" = "#00BF7D")
+
+annotations_df <- annotations_df[colnames(exp.mtx),]
+
+top_ha <- HeatmapAnnotation(df = annotations_df,
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors,
+                                       celltype = celltype_color))
+
+
+p <- Heatmap(exp.mtx,
+             top_annotation = top_ha,
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4"))
+        )
+ht <- draw(p)
+```
+
+
+```{r}
+Heatmap(exp.mtx[common.gene[row_order(ht)],grep("MF",colnames(exp.mtx))],
+        cluster_rows = F, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4),
+        labels = c("-4", "0", "4")),
+        top_annotation = HeatmapAnnotation(df = annotations_df[grep("MF",colnames(exp.mtx)),],
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors))
+        )
+
+Heatmap(exp.mtx[common.gene[row_order(ht)],grep("HF",colnames(exp.mtx))],
+        cluster_rows = F, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4),
+        labels = c("-4", "0", "4")),
+        top_annotation = HeatmapAnnotation(df = annotations_df[grep("HF",colnames(exp.mtx)),],
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors))
+        )
+
+
+```
+
+```{r split genes into 2 for heatmap}
+ribosome.gene <- hippo.DG_Mature_Exc.deg.sig$gene[grep(pattern = "^Rp[sl]",hippo.DG_Mature_Exc.deg.sig$gene)]
+other.gene <- hippo.DG_Mature_Exc.deg.sig$gene[-grep(pattern = "^Rp[sl]",hippo.DG_Mature_Exc.deg.sig$gene)]
+
+intersect(common.gene,hippo.DG_Mature_Exc.deg.sig$gene)
+
+p1 <- Heatmap(exp.mtx[intersect(common.gene,hippo.DG_Mature_Exc.deg.sig$gene),],
+             top_annotation = top_ha,
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")))
+
+p2 <- Heatmap(exp.mtx[other.gene,],
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")))
+
+ht_list <- p1 %v% p2
+
+# pdf("./Figure/Trajectory/DEG.pseudotime.plot.heatmap.pdf",width = 9,height = 15)
+draw(ht_list)
+# dev.off()
+
+save(psuedotime.deg2, file = "ribo.genes.rdata")
+```
+
+```{r split genes into 2 for heatmap}
+
+
+psuedotime.deg <- unique(c(shared.fit_coefs.sig.pseudotime$gene_id,
+                           sub.down.fit_coefs.sig.pseudotime$gene_id,
+                           sub.up.fit_coefs.sig.pseudotime$gene_id))
+
+pseudotime.table <- rbind(as.data.frame(shared.fit_coefs.sig.pseudotime),
+                as.data.frame(sub.down.fit_coefs.sig.pseudotime),
+                as.data.frame(sub.up.fit_coefs.sig.pseudotime))
+pseudotime.table <- pseudotime.table[, !sapply(pseudotime.table, is.list)]
+
+write.csv(pseudotime.table, file = "Pseudotime.dependent.csv")
+
+ribosome.gene <- psuedotime.deg[grep(pattern = "^Rp[sl]",psuedotime.deg)]
+other.gene <- psuedotime.deg[-grep(pattern = "^Rp[sl]",psuedotime.deg)]
+
+p1 <- Heatmap(exp.mtx[psuedotime.deg,],
+             top_annotation = top_ha,
+        cluster_rows = T, show_row_names = F, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")))
+
+p2 <- Heatmap(exp.mtx[psuedotime.deg,],
+        cluster_rows = T, show_row_names = F, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")))
+
+ht_list <- p1 %v% p2
+
+# pdf("./Figure/Trajectory/DEG.pseudotime.plot.heatmap.pdf",width = 6,height = 6)
+tiff(filename = paste("./Figure/Trajectory/pseudotime.plot.heatmap.tiff", sep = ""), res = 300, height = 2500, width = 2500)
+p1
+dev.off()
+
+```
+
+
+```{r split genes into 2 for heatmap}
+ribosome.gene <- psuedotime.deg2[grep(pattern = "^Rp[sl]",psuedotime.deg2)]
+other.gene <- psuedotime.deg2[-grep(pattern = "^Rp[sl]",psuedotime.deg2)]
+
+p1 <- Heatmap(exp.mtx[ribosome.gene,],
+             top_annotation = top_ha,
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")))
+
+p2 <- Heatmap(exp.mtx[other.gene,],
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4")))
+
+ht_list <- p1 %v% p2
+
+# pdf("./Figure/Trajectory/DEG.pseudotime.plot.heatmap.pdf",width = 6,height = 6)
+tiff(filename = paste("./Figure/Trajectory/DEG.pseudotime.plot.heatmap.tiff", sep = ""), res = 300, height = 2500, width = 2500)
+draw(ht_list)
+dev.off()
+
+```
+
+
+
+
+
+
+```{r}
+# Assuming oc.obj$pseudotime.bin and oc.obj$condition are vectors with names matching the column names of exp.mtx
+pseudotime_bin <- as.factor(dg.neuron.obj$pseudotime.bin) # Ensure it's a factor for discrete color coding
+condition <- as.factor(dg.neuron.obj$condition) # Ensure it's a factor for discrete color coding
+celltype <- factor(dg.neuron.obj$celltype.neuron, levels = c("DG_Immature_Neuron","DG_Mature_Exc"))
+
+# Create a data frame for annotations
+annotations_df <- data.frame(pseudotime_bin, condition, celltype)
+
+
+pseudotime_colors <- c("1" = "#440154FF", "2" = "#472D7BFF", "3" = "#3B528BFF",
+                       "4" = "#2C728EFF", "5" = "#21908CFF", "6" = "#27AD81FF",
+                       "7" = "#5DC863FF", "8" = "#AADC32FF", "9" = "#FDE725FF", "10" = "yellow")
+condition_colors <- c("MF" = "#45baff", "HF" = "#fb4137")
+celltype_color <- c("DG_Immature_Neuron" = "#00B0F6","DG_Mature_Exc" = "#00BF7D")
+
+annotations_df <- annotations_df[colnames(exp.mtx),]
+
+top_ha <- HeatmapAnnotation(df = annotations_df,
+                            col = list(condition = condition_colors,
+                                       pseudotime_bin = pseudotime_colors,
+                                       celltype = celltype_color))
+
+
+p <- Heatmap(exp.mtx,
+             top_annotation = top_ha,
+        cluster_rows = T, show_row_names = T, show_row_dend = F,
+        cluster_columns = F, show_column_names = F,
+        heatmap_legend_param = list(
+        title = "rnorm", at = c(-4, 0, 4), 
+        labels = c("-4", "0", "4"))
+        )
+ht <- draw(p)
+```
+
+
+
+```{r}
+plot <- plot_cells(cds,color_cells_by = "pseudotime.bin",cell_size = 1, show_trajectory_graph = F)
+cell_metadata <- colData(cds)
+colData(cds)$pseudotime.bin <- as.character(colData(cds)$pseudotime.bin)
+colData(cds)$pseudotime.bin <- as.factor(colData(cds)$pseudotime.bin)
+
+pdf("./Figure/Trajectory/umap.trajectory.pseudotime.pdf",width = 10,height = 10)
+plot + 
+  scale_x_reverse() + 
+  scale_color_manual(values = pseudotime_colors)
+dev.off()
+
+pdf("./Figure/Trajectory/umap.trajectory.pdf",width = 10,height = 10)
+plot_cells(cds,color_cells_by = "celltype.neuron",cell_size = 1,
+           show_trajectory_graph = F,group_label_size = 0)+ 
+  scale_x_reverse()+
+  scale_color_manual(values = celltype_color)
+dev.off()
+```
+
+```{r}
+save.image("trajectory.v1.Rdata")
+```
+
+
+
+
+
+```{r}
+colnames(shared.sub.cds)
+range(dg.neuron.obj$pseudotime.bin[colnames(shared.sub.cds)])
+```
+
+```{r}
+test.df <- FetchData(dg.neuron.obj, vars = c("pseudotime.bin","percent.ribo","condition"))
+
+ggplot(test.df, aes(x = pseudotime.bin, y = percent.ribo, color = condition)) +
+  geom_smooth(aes(group = condition), method = "loess", se = T) +
+  labs(title = "Expression of percent.ribo along Pseudotime",
+       x = "Pseudotime",
+       y = "Olfm1 Expression") +
+  theme_bw()+
+  theme(panel.grid = element_blank(),
+        # axis.ticks = element_blank(),
+        # strip.background = element_blank(),
+        strip.text = element_text(face = "bold.italic",size = rel(1)),
+        # axis.text = element_blank()
+        )+
+  scale_color_manual(values = c("MF" = "#45baff", "HF" = "#fb4137"))
+ggsave(paste("./Figure/Trajectory/percent.ribo.pseudotime.tiff", sep = ""), device='tiff', dpi=300, height = 1000, width = 1000, unit = 'px')
+
+
+for (deg in hippo.DG_Mature_Exc.deg.sig$gene){
+  test.df <- FetchData(dg.neuron.obj, vars = c("pseudotime.bin",deg,"condition"))
+  colnames(test.df) <- c("pseudotime","gene","condition")
+  
+  ggplot(test.df, aes(x = pseudotime, y = gene, color = condition)) +
+    geom_smooth(aes(group = condition), method = "loess", se = T) +
+    labs(title = paste0("Expression of ", deg, " along Pseudotime"),
+         x = "Pseudotime",
+         y = paste0(deg," Expression")) +
+    theme_bw()+
+    theme(panel.grid = element_blank(),
+          # axis.ticks = element_blank(),
+          # strip.background = element_blank(),
+          strip.text = element_text(face = "bold.italic",size = rel(1)),
+          # axis.text = element_blank()
+          )+
+  scale_color_manual(values = c("MF" = "#45baff", "HF" = "#fb4137"))
+  ggsave(paste("./Figure/Trajectory/",deg,".pseudotime.tiff", sep = ""), device='tiff', dpi=300, height = 1000, width = 1000, unit = 'px')
+}
+```
+
+
+
+
+
+```{r}
+FeaturePlot(hippo.neuron.obj, features = "Spink8", reduction = "neuron.wnn.umap",pt.size = 1)
+DimPlot(hippo.neuron.obj, group.by = "celltype.neuron", reduction = "neuron.wnn.umap",pt.size = 1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

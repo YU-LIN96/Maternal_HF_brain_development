@@ -1,0 +1,54 @@
+---
+title: "QC"
+author: "Yu"
+date: "2024-04-16"
+output: html_document
+---
+
+```{r}
+merge.obj$orig.ident <- factor(merge.obj$orig.ident, levels = c("MF.rep2", "MF.rep3",
+                                                                "HF.rep1", "HF.rep3"))
+```
+
+
+```{r}
+Idents(merge.obj) <- "orig.ident"
+VlnPlot(merge.obj, features = c( "nCount_RNA"), pt.size = 0, cols = rep("steelblue",20))+ 
+  geom_hline(yintercept=20)+ 
+  NoLegend()+ geom_hline(yintercept=20)
+ggsave(paste("./Figure/Vlnplot.nCount_RNA.tiff", sep = ""), device='tiff', dpi=100, height = 1000, width = 1000, unit = 'px')
+
+VlnPlot(merge.obj, features = c("nFeature_RNA"), pt.size = 0, cols = rep("steelblue",20)) +
+  geom_hline(yintercept=c(501,6999), linetype="dashed", color = "red")+ 
+  NoLegend()
+ggsave(paste("./Figure/Vlnplot.nFeature_RNA.tiff", sep = ""), device='tiff', dpi=100, height = 1000, width = 1000, unit = 'px')
+
+VlnPlot(merge.obj, features = c("nCount_ATAC"), pt.size = 0, cols = rep("steelblue",20)) + 
+  geom_hline(yintercept=c(1001), linetype="dashed", color = "red")+ 
+  NoLegend()
+ggsave(paste("./Figure/Vlnplot.nCount_ATAC.tiff", sep = ""), device='tiff', dpi=100, height = 1000, width = 1000, unit = 'px')
+
+VlnPlot(merge.obj, features = c("TSS.enrichment"), pt.size = 0, cols = rep("steelblue",20)) + 
+  geom_hline(yintercept=2, linetype="dashed", color = "red")+ 
+  ylim(c(2, 20))+
+  NoLegend()
+ggsave(paste("./Figure/Vlnplot.TSS.enrichment.tiff", sep = ""), device='tiff', dpi=100, height = 1000, width = 1000, unit = 'px')
+```
+
+
+
+```{r}
+DimPlot(merge.obj, reduction = "wnn.umap", label = F, repel = TRUE)
+ggsave(paste("./Figure/Dimplot.wnn.sample.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+```
+
+
+
+
+
+
+
+
+
+

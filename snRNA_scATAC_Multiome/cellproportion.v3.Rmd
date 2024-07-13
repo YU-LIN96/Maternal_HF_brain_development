@@ -1,0 +1,160 @@
+
+
+
+
+```{r}
+library("scProportionTest")
+```
+
+
+
+
+```{r}
+prop_test <- sc_utils(hippo.neuron.obj)
+```
+
+
+
+```{r}
+prop_test <- permutation_test(
+	prop_test, cluster_identity = "celltype.neuron", #celltype.crude.v2 celltype.detailed
+	sample_1 = "MF", sample_2 = "HF",
+	sample_identity = "condition"
+)
+```
+
+
+
+```{r}
+permutation_plot(prop_test)
+
+
+# ggsave(paste("./Figure/sc_utils.celltype.major.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+# ggsave(paste("./Figure/sc_utils.celltype.sub.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+ggsave(paste("./Figure/hippo/sc_utils.hippo.neruon.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+
+
+```{r}
+source("distribution_Roe.R")
+```
+
+
+```{r}
+roe.table <- FetchData(hippo.neuron.obj,vars = c("orig.ident","condition","celltype.neuron","celltype.crude.v2"))
+```
+
+
+```{r}
+distribution_Roe(
+  meta_data = roe.table,
+  celltype_column = "celltype.neuron",
+  condition_column = "condition",
+  add_label = "number",
+  tile_color = "grey",
+  tile_fill = "D"
+)
+
+# ggsave(paste("./Figure/roe.celltype.major.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+ggsave(paste("./Figure/hippo/roe.neuron.sub.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+
+
+distribution_Roe(
+  meta_data = roe.table,
+  celltype_column = "celltype.neuron",
+  condition_column = "orig.ident",
+  add_label = "number",
+  tile_color = "grey",
+  tile_fill = "D"
+)
+
+# ggsave(paste("./Figure/roe.celltype.sub.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+ggsave(paste("./Figure/hippo/roe.neuron.sub.sample.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+
+```{r}
+distribution_Roe(
+  meta_data = roe.table,
+  celltype_column = "celltype.crude.v2",
+  condition_column = "orig.ident",
+  add_label = "number",
+  tile_color = "grey",
+  tile_fill = "D"
+)
+
+ggsave(paste("./Figure/roe.celltype.sample.tiff", sep = ""), device='tiff', dpi = 300, height = 2000, width = 2000, unit = 'px')
+```
+
+
+
+```{r}
+table(merge.obj$orig.ident,merge.obj$celltype.crude.v2)
+
+write.csv(table(merge.obj$orig.ident,merge.obj$celltype.crude.v2),
+          file = "tb.sample.majorcelltype.csv")
+
+write.csv(table(merge.obj$orig.ident,merge.obj$celltype.detailed),
+          file = "tb.sample.subcelltype.csv")
+```
+
+
+```{r}
+table(hippo.neuron.obj$orig.ident,hippo.neuron.obj$celltype.neuron)
+
+proportion.df <- as.data.frame(table(hippo.neuron.obj$orig.ident,hippo.neuron.obj$celltype.neuron))
+colnames(proportion.df) <- c("sample","celltype","Freq")
+
+# Calculate the total frequency per sample
+total_freq_per_sample <- aggregate(Freq ~ sample, proportion.df, sum)
+
+# Merge total frequencies back to the original data
+proportion.df <- merge(proportion.df, total_freq_per_sample, by="sample", suffixes=c("", ".total"))
+
+# Calculate the percentage
+proportion.df$Percentage <- (proportion.df$Freq / proportion.df$Freq.total) * 100
+
+# Create the stacked bar plot
+ggplot(proportion.df, aes(x=sample, y=Percentage, fill=celltype)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle=90, hjust=1),
+        panel.background = element_rect(fill = "white"), # Change background to white
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_rect(size = 0,fill = NA)) +
+  ggtitle("Stacked Bar Plot of Cell Type Percentage per Sample")
+
+ggsave(paste("./Figure/hippo/proportion.sample.tiff", sep = ""), device='tiff', dpi=300, height = 1000, width = 1000, unit = 'px')
+```
+
+
+```{r}
+proportion.df <- as.data.frame(table(merge.obj$condition,merge.obj$celltype.crude.v2))
+colnames(proportion.df) <- c("condition","celltype","Freq")
+
+
+# Calculate the total frequency per sample
+total_freq_per_sample <- aggregate(Freq ~ condition, proportion.df, sum)
+
+# Merge total frequencies back to the original data
+proportion.df <- merge(proportion.df, total_freq_per_sample, by="condition", suffixes=c("", ".total"))
+
+# Calculate the percentage
+proportion.df$Percentage <- (proportion.df$Freq / proportion.df$Freq.total) * 100
+
+# Create the stacked bar plot
+ggplot(proportion.df, aes(x=condition, y=Percentage, fill=celltype)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle=90, hjust=1),
+        panel.background = element_rect(fill = "white"), # Change background to white
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_rect(size = 0,fill = NA)) +
+  ggtitle("Stacked Bar Plot of Cell Type Percentage per Sample")
+
+ggsave(paste("./Figure/proportion.condition.tiff", sep = ""), device='tiff', dpi=300, height = 1000, width = 1000, unit = 'px')
+```
+
+
+
